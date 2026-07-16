@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
+import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { loadAnalyses, saveAnalyses } from './storage';
 import type { AiListingAnalysis, Analysis, Listing } from './types';
 import './style.css';
@@ -24,6 +25,7 @@ function App() {
   const [maxPrice, setMaxPrice] = useState('300000');
   const [regions, setRegions] = useState({ haeundae: true, suyeong: true });
   const [onlyOnSale, setOnlyOnSale] = useState(true);
+  const [aiModel, setAiModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [isFetching, setIsFetching] = useState(false);
   const [isAiFetching, setIsAiFetching] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -137,7 +139,7 @@ function App() {
       const aiResponse = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ listings }),
+        body: JSON.stringify({ listings, model: aiModel }),
       });
       const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
       if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));
@@ -177,6 +179,7 @@ function App() {
             <label className="search-field">최대 금액<input inputMode="numeric" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="300000" /></label>
             <fieldset className="search-field region-field"><legend>지역</legend><label><input type="checkbox" checked={regions.haeundae} onChange={(event) => setRegions((previous) => ({ ...previous, haeundae: event.target.checked }))} /> 해운대구</label><label><input type="checkbox" checked={regions.suyeong} onChange={(event) => setRegions((previous) => ({ ...previous, suyeong: event.target.checked }))} /> 수영구</label></fieldset>
             <label className="sale-field"><input type="checkbox" checked={onlyOnSale} onChange={(event) => setOnlyOnSale(event.target.checked)} /> 판매중만</label>
+            <label className="search-field model-field">AI 모델<select value={aiModel} disabled={isFetching || isAiFetching} onChange={(event) => setAiModel(event.target.value as GeminiModel)}>{GEMINI_MODELS.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}</select></label>
             <button className="button button-primary" type="submit" disabled={isFetching || isAiFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
             <button className="button button-ai" type="button" disabled={isFetching || isAiFetching} onClick={fetchWithAi}>{isAiFetching ? 'AI 분석 중…' : 'AI조회'}</button>
           </form>

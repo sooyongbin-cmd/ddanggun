@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AiListingAnalysis, Listing } from '../src/types';
+import { DEFAULT_GEMINI_MODEL, isGeminiModel } from '../src/gemini-models';
 
 const MAX_LISTINGS = 40;
 const MAX_BODY_LENGTH = 2_000;
@@ -26,10 +27,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return sendJson(res, 503, { error: '서버에 GEMINI_API_KEY가 설정되지 않았습니다.' });
-  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
 
   try {
-    const body = await readJsonBody(req) as { listings?: unknown };
+    const body = await readJsonBody(req) as { listings?: unknown; model?: unknown };
+    const model = body.model === undefined ? DEFAULT_GEMINI_MODEL : body.model;
+    if (!isGeminiModel(model)) return sendJson(res, 400, { error: '지원하지 않는 Gemini 모델입니다.' });
     if (!Array.isArray(body.listings) || body.listings.length === 0) {
       return sendJson(res, 400, { error: '분석할 매물 목록이 없습니다.' });
     }
