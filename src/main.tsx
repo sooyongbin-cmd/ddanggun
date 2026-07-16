@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
 import { filterListingsForAi, MAX_AI_LISTINGS } from './ai-listing-filter';
+import { getCpuDisplayInfo } from './cpu-display';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
 import { loadAnalyses, saveAnalyses } from './storage';
@@ -209,13 +210,13 @@ function App() {
               </div>
               <div className="comparison-table-wrap">
                 <table className="comparison-table ai-comparison-table">
-                  <thead><tr><th>순위</th><th>매물</th><th>금액</th><th>CPU</th><th>RAM</th><th>저장장치</th><th>GPU</th><th>AI 점수</th><th>평가</th><th>요약</th><th>장점</th><th>주의사항</th></tr></thead>
+                  <thead><tr><th>순위</th><th>매물</th><th>금액</th><th>CPU / 성능정보</th><th>RAM</th><th>저장장치</th><th>GPU</th><th>AI 점수</th><th>평가</th><th>요약</th><th>장점</th><th>주의사항</th></tr></thead>
                   <tbody>{aiResults.map((item, index) => (
                     <tr key={item.id}>
                       <td><span className="table-rank">{String(index + 1).padStart(2, '0')}</span></td>
                       <td><div className="ai-product"><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a><span>{item.location ?? '지역 미상'}</span></div></td>
                       <td className="price-cell">{item.price ? `${item.price.toLocaleString()}원` : '미상'}</td>
-                      <td>{item.cpu}</td><td>{item.ram}</td><td>{item.storage}</td><td>{item.gpu}</td>
+                      <td><AiCpuDetails cpu={item.cpu} /></td><td>{item.ram}</td><td>{item.storage}</td><td>{item.gpu}</td>
                       <td><span className="ai-score">{item.score}</span></td>
                       <td><span className={`grade grade-${item.recommendation}`}>{item.recommendation}</span></td>
                       <td className="ai-text-cell">{item.summary}</td><td className="ai-text-cell">{item.strengths}</td><td className="ai-text-cell">{item.cautions}</td>
@@ -287,5 +288,16 @@ function formatDate(value?: string) {
 
 function Missing() { return <span className="missing">확인 필요</span>; }
 function formatCpuSpeed(cpu?: string) { const spec = getCpuSpecification(cpu); if (!spec) return <Missing />; return spec.maxGhz ? `${spec.baseGhz} / ${spec.maxGhz}GHz` : `${spec.baseGhz}GHz`; }
+
+function AiCpuDetails({ cpu }: { cpu: string }) {
+  const info = getCpuDisplayInfo(cpu);
+  return (
+    <div className="ai-cpu-details">
+      <strong>{cpu}</strong>
+      <span>{info.performance === null ? '성능지수 확인 불가' : <>성능지수 <b>{info.performance}</b></>}</span>
+      <small>{info.specification}</small>
+    </div>
+  );
+}
 
 createRoot(document.getElementById('root')!).render(<App />);
