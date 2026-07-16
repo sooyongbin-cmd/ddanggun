@@ -36,6 +36,24 @@ describe('CPU listing match API', () => {
     expect(response.json().error).toEqual({ code: 'SUPABASE_CPU_MATCH_FAILED', message: 'permission denied', status: 403 });
   });
 
+  it('matches a CPU ranked below the former 1,000-row cutoff', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([cpuRow('Intel Core i3-4130', 1018)]),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const response = createResponse();
+
+    await handler({ method: 'POST', body: { items: [{ id: 'legacy', cpu: 'i3-4130' }] } } as never, response.res as never);
+
+    expect(response.json()).toMatchObject({ matchedCount: 1, unmatchedCount: 0 });
+    expect(response.json().matches.legacy.performance_rank).toBe(1018);
+    const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(requestUrl.searchParams.get('or')).toContain('cpu_name.ilike.*4130*');
+    expect(requestUrl.searchParams.has('limit')).toBe(false);
+  });
+
   it('rejects an empty request', async () => {
     const response = createResponse();
     await handler({ method: 'POST', body: { items: [] } } as never, response.res as never);

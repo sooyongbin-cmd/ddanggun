@@ -33,8 +33,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const query = new URLSearchParams({
       select: SELECT_COLUMNS,
       order: 'performance_rank.asc',
-      limit: '1000',
+      // Filter at the database rather than dropping every CPU below rank 1,000.
     });
+    query.set('or', `(${[...new Set(items.map((item) => getCpuModelNumber(item.cpu)).filter(Boolean))].map((number) => `cpu_name.ilike.*${number}*`).join(',')})`);
     const response = await fetch(`${SUPABASE_URL}/rest/v1/cpu_specs?${query}`, {
       headers: {
         apikey: SUPABASE_PUBLISHABLE_KEY,
@@ -76,6 +77,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch (error) {
     return sendJson(res, 500, { error: { code: 'CPU_MATCH_INTERNAL_ERROR', message: getErrorMessage(error) } });
   }
+}
+
+function getCpuModelNumber(cpu: string) {
+  return normalizeCpuModel(cpu).match(/\d{3,5}/)?.[0] ?? '';
 }
 
 function normalizeRequestItem(value: unknown): CpuMatchRequest[] {
