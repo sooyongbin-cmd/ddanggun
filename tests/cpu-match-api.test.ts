@@ -50,8 +50,24 @@ describe('CPU listing match API', () => {
     expect(response.json()).toMatchObject({ matchedCount: 1, unmatchedCount: 0 });
     expect(response.json().matches.legacy.performance_rank).toBe(1018);
     const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(requestUrl.searchParams.get('or')).toContain('cpu_name.ilike.*4130*');
     expect(requestUrl.searchParams.has('limit')).toBe(false);
+    expect(fetchMock.mock.calls[0][1].headers.Range).toBe('0-999');
+    expect(fetchMock.mock.calls[0][1].headers['Range-Unit']).toBe('items');
+  });
+
+  it('continues through later pages when the first page is full', async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, index) => cpuRow(`Intel Core i5-${10000 + index}`, index + 1));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify(firstPage) })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify([cpuRow('Intel Core i3-4130', 1018)]) });
+    vi.stubGlobal('fetch', fetchMock);
+    const response = createResponse();
+
+    await handler({ method: 'POST', body: { items: [{ id: 'legacy', cpu: 'i3-4130' }] } } as never, response.res as never);
+
+    expect(response.json().matches.legacy.performance_rank).toBe(1018);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].headers.Range).toBe('1000-1999');
   });
 
   it('rejects an empty request', async () => {
