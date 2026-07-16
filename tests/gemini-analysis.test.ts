@@ -15,7 +15,7 @@ describe('Gemini analysis API', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: 'i5-10400', cpuPerformanceScore: 58, cpuPerformanceSummary: '10세대 중급형 데스크톱 CPU로 사무와 일반 작업에 적합', cpuCores: 6, cpuThreads: 12, cpuBaseClockGhz: 2.9, cpuMaxClockGhz: 4.3, ram: '16GB', storage: 'SSD 512GB', gpu: 'GTX 1660', score: 88, recommendation: '추천', summary: '균형 잡힌 구성', strengths: '메모리와 저장공간', cautions: '파워 확인 필요' }]) }] } }],
+        candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', category: '데스크톱 PC', attributes: [{ name: 'CPU', value: 'Intel Core i5-10400', unit: '', confidence: 'high' }, { name: '코어', value: '6', unit: '개', confidence: 'high' }, { name: 'RAM', value: '16', unit: 'GB', confidence: 'medium' }], score: 88, recommendation: '추천', summary: '균형 잡힌 구성', strengths: '메모리와 저장공간', cautions: '파워 확인 필요' }]) }] } }],
       }),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -28,16 +28,15 @@ describe('Gemini analysis API', () => {
     await handler(req as never, response.res as never);
 
     expect(response.statusCode()).toBe(200);
-    expect(response.json().analyses[0]).toMatchObject({ id: 'listing-1', title: '게이밍 PC', url: 'https://example.com/original', cpuPerformanceScore: 58, cpuPerformanceSummary: '10세대 중급형 데스크톱 CPU로 사무와 일반 작업에 적합', cpuCores: 6, cpuThreads: 12, cpuBaseClockGhz: 2.9, cpuMaxClockGhz: 4.3, score: 88, recommendation: '추천' });
+    expect(response.json().analyses[0]).toMatchObject({ id: 'listing-1', title: '게이밍 PC', url: 'https://example.com/original', category: '데스크톱 PC', attributes: [{ name: 'CPU', value: 'Intel Core i5-10400', unit: '', confidence: 'high' }, { name: '코어', value: '6', unit: '개', confidence: 'high' }, { name: 'RAM', value: '16', unit: 'GB', confidence: 'medium' }], score: 88, recommendation: '추천' });
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('gemini-3.1-flash-lite:generateContent');
     expect(options.headers['x-goog-api-key']).toBe('test-key');
     const requestBody = JSON.parse(options.body);
     expect(requestBody.generationConfig.responseMimeType).toBe('application/json');
     expect(requestBody.generationConfig.responseSchema.type).toBe('ARRAY');
-    expect(requestBody.generationConfig.responseSchema.items.required).toContain('cpuPerformanceScore');
-    expect(requestBody.generationConfig.responseSchema.items.required).toContain('cpuPerformanceSummary');
-    expect(requestBody.generationConfig.responseSchema.items.required).toEqual(expect.arrayContaining(['cpuCores', 'cpuThreads', 'cpuBaseClockGhz', 'cpuMaxClockGhz']));
+    expect(requestBody.generationConfig.responseSchema.items.required).toEqual(expect.arrayContaining(['id', 'category', 'attributes']));
+    expect(requestBody.generationConfig.responseSchema.items.properties.attributes.maxItems).toBe(12);
     const prompt = requestBody.contents[0].parts[0].text as string;
     const promptListings = JSON.parse(prompt.slice(prompt.indexOf('[')));
     expect(promptListings).toEqual([{ id: 'listing-1', title: '게이밍 PC', price: 250000, body: 'i5-10400 RAM 16GB' }]);
@@ -53,18 +52,27 @@ describe('Gemini analysis API', () => {
     expect(response.json().error).toMatchObject({ code: 'GEMINI_API_KEY_MISSING', stage: 'request-validation' });
   });
 
-  it('normalizes out-of-range CPU specification values returned by Gemini', async () => {
+  it('removes invalid and duplicate attributes and limits them to 12', async () => {
     vi.stubEnv('GEMINI_API_KEY', 'test-key');
+    const attributes = [
+      { name: '브랜드', value: '삼성', unit: '', confidence: 'unknown' },
+      { name: '브랜드', value: '중복값', unit: '', confidence: 'high' },
+      { name: '', value: '빈 이름', unit: '', confidence: 'high' },
+      ...Array.from({ length: 15 }, (_, index) => ({ name: `속성${index}`, value: `값${index}`, unit: '', confidence: 'medium' })),
+    ];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: 'i9-14900K', cpuPerformanceScore: 95, cpuPerformanceSummary: '최상급 CPU', cpuCores: 999, cpuThreads: -4, cpuBaseClockGhz: 3.456, cpuMaxClockGhz: null, ram: '32GB', storage: 'SSD 1TB', gpu: '확인 불가', score: 80, recommendation: '추천', summary: '고성능 구성', strengths: 'CPU', cautions: '발열' }]) }] } }] }),
+      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', category: '가전제품', attributes, score: 80, recommendation: '추천', summary: '상태 양호', strengths: '가격', cautions: '연식 확인' }]) }] } }] }),
     }));
     const response = createResponse();
 
-    await handler({ method: 'POST', body: { listings: [{ id: 'listing-1', title: '고성능 PC', price: 1000000, url: 'https://example.com/1' }] } } as never, response.res as never);
+    await handler({ method: 'POST', body: { listings: [{ id: 'listing-1', title: '중고 가전', price: 100000, url: 'https://example.com/1' }] } } as never, response.res as never);
 
-    expect(response.json().analyses[0]).toMatchObject({ cpuCores: 256, cpuThreads: 0, cpuBaseClockGhz: 3.46, cpuMaxClockGhz: 0 });
+    const normalized = response.json().analyses[0].attributes;
+    expect(normalized).toHaveLength(12);
+    expect(normalized[0]).toEqual({ name: '브랜드', value: '삼성', unit: '', confidence: 'low' });
+    expect(normalized.filter((attribute: { name: string }) => attribute.name === '브랜드')).toHaveLength(1);
   });
 
   it.each(GEMINI_MODELS)('accepts $id', async ({ id }) => {
@@ -72,7 +80,7 @@ describe('Gemini analysis API', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: '확인 불가', cpuPerformanceScore: 0, cpuPerformanceSummary: '확인 불가', cpuCores: 0, cpuThreads: 0, cpuBaseClockGhz: 0, cpuMaxClockGhz: 0, ram: '확인 불가', storage: '확인 불가', gpu: '확인 불가', score: 20, recommendation: '주의', summary: '정보 부족', strengths: '확인 불가', cautions: '상세 사양 확인 필요' }]) }] } }] }),
+      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', category: '기타', attributes: [], score: 20, recommendation: '주의', summary: '정보 부족', strengths: '확인 불가', cautions: '상세 정보 확인 필요' }]) }] } }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const response = createResponse();
