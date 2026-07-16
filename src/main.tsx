@@ -94,7 +94,7 @@ function App() {
     <div className="app-shell">
       <nav className="topbar" aria-label="주요 메뉴">
         <a className="wordmark" href="#top" aria-label="PC Value 홈">
-          <span className="wordmark-dot" /> PC VALUE
+          <span className="wordmark-dot" /> ddanggun
         </a>
         <div className="nav-meta">해운대구 · 수영구 PC 분석</div>
         <button className="button button-outline button-small" onClick={clearHistory}>분석 이력 삭제</button>
