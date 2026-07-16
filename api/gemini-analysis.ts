@@ -68,7 +68,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         id: item.id,
         title: item.title,
         price: item.price,
-        location: item.location,
         body: item.body?.slice(0, MAX_BODY_LENGTH) ?? '',
       })))}`,
     ].join('\n');

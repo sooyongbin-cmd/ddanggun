@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
-import { filterListingsForAi } from './ai-listing-filter';
+import { filterListingsForAi, MAX_AI_LISTINGS } from './ai-listing-filter';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
 import { loadAnalyses, saveAnalyses } from './storage';
@@ -17,7 +17,7 @@ const myComputer = analyze({
   location: '보유 PC',
 });
 
-const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '부산 구·군 순차 조회', '중복 매물 정리', 'PC CPU 필터', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
+const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '부산 구·군 순차 조회', '동일 내용 중복 제거', 'CPU 성능순 대상 선정', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
 type AiProgress = { state: 'idle' | 'running' | 'success' | 'error'; activeStep: number; detail: string };
 
 function App() {
@@ -123,11 +123,17 @@ function App() {
 
       await nextPaint();
       const filtered = filterListingsForAi(listings, keyword);
-      setAiProgress({ state: 'running', activeStep: 4, detail: filtered.applied ? `검색어가 PC이므로 CPU 확인 불가 매물 ${filtered.excludedMissingCpu}건을 제외했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.` : `검색어가 PC가 아니므로 CPU 확인 불가 필터를 적용하지 않았습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.` });
+      setAiProgress({
+        state: 'running',
+        activeStep: 4,
+        detail: filtered.applied
+          ? `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건과 CPU 확인 불가 ${filtered.excludedMissingCpu}건을 제외한 뒤, CPU 성능이 높은 순서로 ${filtered.eligibleBeforeLimit}건 중 최대 ${MAX_AI_LISTINGS}건을 선정했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.`
+          : `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건을 제외하고 조회 순서대로 최대 ${MAX_AI_LISTINGS}건을 선정했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.`,
+      });
       if (!filtered.listings.length) throw new Error('PC 검색 결과에서 CPU를 확인할 수 있는 매물이 없어 AI 분석을 진행할 수 없습니다.');
 
       await nextPaint();
-      setAiProgress({ state: 'running', activeStep: 5, detail: `${filtered.listings.length}개 매물을 Gemini에 전달했습니다. 최대 40건을 분석합니다.` });
+      setAiProgress({ state: 'running', activeStep: 5, detail: `${filtered.listings.length}개 매물의 id·제목·가격·본문을 하나의 JSON 배열로 Gemini에 전달했습니다. location은 전달하지 않습니다.` });
       const aiResponse = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -174,7 +180,7 @@ function App() {
             <button className="button button-primary" type="submit" disabled={isFetching || isAiFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
             <button className="button button-ai" type="button" disabled={isFetching || isAiFetching} onClick={fetchWithAi}>{isAiFetching ? 'AI 분석 중…' : 'AI조회'}</button>
           </form>
-          <p className="search-condition-note"><strong>조회 범위</strong> 부산광역시 전체 16개 구·군을 차례로 조회합니다. <strong>AI 전달 조건</strong> 검색어가 PC이면 CPU 확인 불가 매물을 제외합니다.</p>
+          <p className="search-condition-note"><strong>조회 범위</strong> 부산광역시 전체 16개 구·군을 차례로 조회합니다. <strong>AI 전달 조건</strong> 제목과 본문이 동일하면 최초 id 한 건만 사용합니다. 검색어가 PC이면 CPU 확인 불가 매물을 제외하고 CPU 성능이 높은 순서로 최대 {MAX_AI_LISTINGS}건을 선정합니다. 지역 정보는 Gemini에 전달하지 않습니다.</p>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
 

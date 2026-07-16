@@ -35,6 +35,11 @@ describe('Gemini analysis API', () => {
     const requestBody = JSON.parse(options.body);
     expect(requestBody.generationConfig.responseMimeType).toBe('application/json');
     expect(requestBody.generationConfig.responseSchema.type).toBe('ARRAY');
+    const prompt = requestBody.contents[0].parts[0].text as string;
+    const promptListings = JSON.parse(prompt.slice(prompt.indexOf('[')));
+    expect(promptListings).toEqual([{ id: 'listing-1', title: '게이밍 PC', price: 250000, body: 'i5-10400 RAM 16GB' }]);
+    expect(prompt).not.toContain('"location"');
+    expect(prompt).not.toContain('우동');
   });
 
   it('reports a missing server API key', async () => {
