@@ -15,7 +15,7 @@ describe('Gemini analysis API', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: 'i5-10400', ram: '16GB', storage: 'SSD 512GB', gpu: 'GTX 1660', score: 88, recommendation: '추천', summary: '균형 잡힌 구성', strengths: '메모리와 저장공간', cautions: '파워 확인 필요' }]) }] } }],
+        candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: 'i5-10400', cpuPerformanceScore: 58, cpuPerformanceSummary: '10세대 중급형 데스크톱 CPU로 사무와 일반 작업에 적합', ram: '16GB', storage: 'SSD 512GB', gpu: 'GTX 1660', score: 88, recommendation: '추천', summary: '균형 잡힌 구성', strengths: '메모리와 저장공간', cautions: '파워 확인 필요' }]) }] } }],
       }),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -28,13 +28,15 @@ describe('Gemini analysis API', () => {
     await handler(req as never, response.res as never);
 
     expect(response.statusCode()).toBe(200);
-    expect(response.json().analyses[0]).toMatchObject({ id: 'listing-1', title: '게이밍 PC', url: 'https://example.com/original', score: 88, recommendation: '추천' });
+    expect(response.json().analyses[0]).toMatchObject({ id: 'listing-1', title: '게이밍 PC', url: 'https://example.com/original', cpuPerformanceScore: 58, cpuPerformanceSummary: '10세대 중급형 데스크톱 CPU로 사무와 일반 작업에 적합', score: 88, recommendation: '추천' });
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('gemini-3.1-flash-lite:generateContent');
     expect(options.headers['x-goog-api-key']).toBe('test-key');
     const requestBody = JSON.parse(options.body);
     expect(requestBody.generationConfig.responseMimeType).toBe('application/json');
     expect(requestBody.generationConfig.responseSchema.type).toBe('ARRAY');
+    expect(requestBody.generationConfig.responseSchema.items.required).toContain('cpuPerformanceScore');
+    expect(requestBody.generationConfig.responseSchema.items.required).toContain('cpuPerformanceSummary');
     const prompt = requestBody.contents[0].parts[0].text as string;
     const promptListings = JSON.parse(prompt.slice(prompt.indexOf('[')));
     expect(promptListings).toEqual([{ id: 'listing-1', title: '게이밍 PC', price: 250000, body: 'i5-10400 RAM 16GB' }]);
@@ -55,7 +57,7 @@ describe('Gemini analysis API', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: '확인 불가', ram: '확인 불가', storage: '확인 불가', gpu: '확인 불가', score: 20, recommendation: '주의', summary: '정보 부족', strengths: '확인 불가', cautions: '상세 사양 확인 필요' }]) }] } }] }),
+      json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', cpu: '확인 불가', cpuPerformanceScore: 0, cpuPerformanceSummary: '확인 불가', ram: '확인 불가', storage: '확인 불가', gpu: '확인 불가', score: 20, recommendation: '주의', summary: '정보 부족', strengths: '확인 불가', cautions: '상세 사양 확인 필요' }]) }] } }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const response = createResponse();

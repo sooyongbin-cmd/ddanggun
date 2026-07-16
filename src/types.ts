@@ -9,6 +9,8 @@ export type AiListingAnalysis = {
   url: string;
   location?: string;
   cpu: string;
+  cpuPerformanceScore: number;
+  cpuPerformanceSummary: string;
   ram: string;
   storage: string;
   gpu: string;
