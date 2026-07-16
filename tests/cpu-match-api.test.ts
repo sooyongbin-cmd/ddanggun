@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import handler from '../api/cpu-match';
+import handler, { normalizeCpuModel } from '../api/cpu-match';
 
 describe('CPU listing match API', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -41,6 +41,20 @@ describe('CPU listing match API', () => {
     await handler({ method: 'POST', body: { items: [] } } as never, response.res as never);
     expect(response.statusCode()).toBe(400);
     expect(response.json().error.code).toBe('EMPTY_CPU_ITEMS');
+  });
+});
+
+describe('CPU model normalization', () => {
+  it.each([
+    ['Intel Core i5-10400F', 'i5-10400f'],
+    ['i5 10400f', 'i5-10400f'],
+    ['AMD Ryzen 7 5800X3D', 'ryzen7-5800x3d'],
+    ['라이젠 5 7600', 'ryzen5-7600'],
+    ['AMD Athlon 3000G', 'athlon-3000g'],
+    ['Intel Core Ultra 5 245K', 'core-ultra-245k'],
+    ['Intel Core Ultra 250KF Plus', 'core-ultra-250kf-plus'],
+  ])('normalizes %s', (input, expected) => {
+    expect(normalizeCpuModel(input)).toBe(expected);
   });
 });
 
