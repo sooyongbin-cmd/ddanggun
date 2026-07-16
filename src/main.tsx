@@ -33,7 +33,7 @@ function App() {
         setLoadError('');
       }
       if (event.data?.type === 'DANGGUN_ANALYZER_ERROR') {
-        setLoadError(event.data.message);
+        setLoadError(getErrorMessage(event.data.message));
         setIsFetching(false);
       }
     };
@@ -77,17 +77,17 @@ function App() {
       if (!contentType.includes('application/json')) {
         throw new Error(`조회 서버가 JSON이 아닌 응답을 반환했습니다 (HTTP ${response.status}). 이 앱은 조회 API가 설정된 서버에서 실행해야 합니다.`);
       }
-      let data: { listings?: Listing[]; error?: string };
+      let data: { listings?: Listing[]; error?: unknown };
       try {
         data = JSON.parse(responseText);
       } catch {
         throw new Error(`조회 서버 응답을 읽을 수 없습니다 (HTTP ${response.status}).`);
       }
-      if (!response.ok) throw new Error(data.error || '당근 검색에 실패했습니다.');
+      if (!response.ok) throw new Error(getErrorMessage(data.error, '당근 검색에 실패했습니다.'));
       importListings(data.listings ?? []);
       if (!data.listings?.length) setLoadError('조건에 맞는 판매중 매물이 없습니다.');
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '당근 검색에 실패했습니다.');
+      setLoadError(getErrorMessage(error, '당근 검색에 실패했습니다.'));
     } finally {
       setIsFetching(false);
     }
@@ -159,6 +159,23 @@ function App() {
       <footer><span>PC VALUE / INTERNAL TOOL</span><span>데이터는 이 브라우저에만 저장됩니다.</span></footer>
     </div>
   );
+}
+
+function getErrorMessage(value: unknown, fallback = '당근 검색에 실패했습니다.'): string {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (value instanceof Error && value.message) return value.message;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['message', 'error', 'detail', 'statusText']) {
+      const nested = record[key];
+      if (typeof nested === 'string' && nested.trim()) return nested;
+      if (nested && nested !== value) {
+        const message: string = getErrorMessage(nested, '');
+        if (message) return message;
+      }
+    }
+  }
+  return fallback;
 }
 
 function formatDate(value?: string) {
