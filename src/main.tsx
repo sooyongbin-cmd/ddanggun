@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
 import { loadAnalyses, saveAnalyses } from './storage';
-import type { Analysis, Listing } from './types';
+import type { AiListingAnalysis, Analysis, Listing } from './types';
 import './style.css';
 
 const myComputer = analyze({
@@ -14,6 +14,9 @@ const myComputer = analyze({
   location: '보유 PC',
 });
 
+const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '지역별 매물 조회', '중복 매물 정리', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
+type AiProgress = { state: 'idle' | 'running' | 'success' | 'error'; activeStep: number; detail: string };
+
 function App() {
   const [items, setItems] = useState<Analysis[]>(loadAnalyses);
   const [keyword, setKeyword] = useState('PC');
@@ -22,7 +25,10 @@ function App() {
   const [regions, setRegions] = useState({ haeundae: true, suyeong: true });
   const [onlyOnSale, setOnlyOnSale] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
+  const [isAiFetching, setIsAiFetching] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [aiResults, setAiResults] = useState<AiListingAnalysis[]>([]);
+  const [aiProgress, setAiProgress] = useState<AiProgress>({ state: 'idle', activeStep: -1, detail: '' });
 
   useEffect(() => saveAnalyses(items), [items]);
   useEffect(() => {
@@ -93,6 +99,63 @@ function App() {
     }
   }
 
+  async function fetchWithAi() {
+    const selectedRegions = Object.entries(regions).filter(([, selected]) => selected).map(([region]) => region);
+    setAiResults([]);
+    setLoadError('');
+    setAiProgress({ state: 'running', activeStep: 0, detail: '입력한 조회 조건을 확인하고 있습니다.' });
+    if (!selectedRegions.length) {
+      const message = '조회할 지역을 하나 이상 선택해 주세요.';
+      setLoadError(message);
+      setAiProgress({ state: 'error', activeStep: 0, detail: message });
+      return;
+    }
+
+    setIsAiFetching(true);
+    try {
+      await nextPaint();
+      const query = new URLSearchParams({
+        search: keyword.trim() || 'PC',
+        minPrice: minPrice.replace(/[^\d]/g, '') || '0',
+        maxPrice: maxPrice.replace(/[^\d]/g, '') || '999999999',
+        regions: selectedRegions.join(','),
+        onlyOnSale: String(onlyOnSale),
+      });
+      setAiProgress({ state: 'running', activeStep: 1, detail: '조회 조건을 검색 서버에 전달했습니다.' });
+      await nextPaint();
+      setAiProgress({ state: 'running', activeStep: 2, detail: '선택한 지역의 매물을 병렬로 조회하고 있습니다.' });
+      const searchResponse = await fetch(`/api/danggun-search?${query}`, { headers: { Accept: 'application/json' } });
+      const searchData = await readJsonResponse<{ listings?: Listing[]; searchedRegions?: number; failedRegions?: number; error?: unknown }>(searchResponse, '조회 서버');
+      if (!searchResponse.ok) throw new Error(getErrorMessage(searchData.error, '당근 검색에 실패했습니다.'));
+
+      const listings = searchData.listings ?? [];
+      setAiProgress({ state: 'running', activeStep: 3, detail: `${searchData.searchedRegions ?? selectedRegions.length}개 지역 조회 후 ${listings.length}개 고유 매물을 정리했습니다.` });
+      if (!listings.length) throw new Error('조건에 맞는 판매중 매물이 없습니다.');
+
+      await nextPaint();
+      setAiProgress({ state: 'running', activeStep: 4, detail: `${listings.length}개 매물을 Gemini에 분석 요청했습니다.` });
+      const aiResponse = await fetch('/api/gemini-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ listings }),
+      });
+      const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
+      if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));
+
+      setAiProgress({ state: 'running', activeStep: 5, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증했습니다.' });
+      if (!Array.isArray(aiData.analyses) || !aiData.analyses.length) throw new Error('AI 분석 결과가 비어 있습니다.');
+      setAiResults(aiData.analyses);
+      await nextPaint();
+      setAiProgress({ state: 'success', activeStep: 6, detail: `${aiData.model ?? 'Gemini'} 분석 결과 ${aiData.analyses.length}건을 표시했습니다.${aiData.limited ? ' 최대 40건만 분석했습니다.' : ''}` });
+    } catch (error) {
+      const message = getErrorMessage(error, 'AI 조회에 실패했습니다.');
+      setLoadError(message);
+      setAiProgress((previous) => ({ ...previous, state: 'error', detail: message }));
+    } finally {
+      setIsAiFetching(false);
+    }
+  }
+
   const grade = (item: Analysis) => item.valueScore && item.confidence !== 'low'
     ? item.valueScore >= 30 ? '추천' : '보통'
     : '주의';
@@ -114,10 +177,54 @@ function App() {
             <label className="search-field">최대 금액<input inputMode="numeric" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="300000" /></label>
             <fieldset className="search-field region-field"><legend>지역</legend><label><input type="checkbox" checked={regions.haeundae} onChange={(event) => setRegions((previous) => ({ ...previous, haeundae: event.target.checked }))} /> 해운대구</label><label><input type="checkbox" checked={regions.suyeong} onChange={(event) => setRegions((previous) => ({ ...previous, suyeong: event.target.checked }))} /> 수영구</label></fieldset>
             <label className="sale-field"><input type="checkbox" checked={onlyOnSale} onChange={(event) => setOnlyOnSale(event.target.checked)} /> 판매중만</label>
-            <button className="button button-primary" type="submit" disabled={isFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
+            <button className="button button-primary" type="submit" disabled={isFetching || isAiFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
+            <button className="button button-ai" type="button" disabled={isFetching || isAiFetching} onClick={fetchWithAi}>{isAiFetching ? 'AI 분석 중…' : 'AI조회'}</button>
           </form>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
+
+        {aiProgress.state !== 'idle' && (
+          <section className="ai-progress-panel" aria-live="polite" aria-label="AI 조회 진행상황">
+            <div className="ai-progress-heading">
+              <div><p className="eyebrow">AI PROCESS</p><h2>AI 조회 진행상황</h2></div>
+              <span className={`progress-state progress-${aiProgress.state}`}>{aiProgress.state === 'success' ? '완료' : aiProgress.state === 'error' ? '오류' : '진행중'}</span>
+            </div>
+            <ol className="progress-steps">
+              {AI_STEPS.map((step, index) => {
+                const status = index < aiProgress.activeStep || aiProgress.state === 'success' ? 'done' : index === aiProgress.activeStep ? aiProgress.state : 'pending';
+                return <li className={`progress-step step-${status}`} key={step}><span>{status === 'done' ? '✓' : index + 1}</span><strong>{step}</strong></li>;
+              })}
+            </ol>
+            <p className="progress-detail">{aiProgress.detail}</p>
+          </section>
+        )}
+
+        {aiResults.length > 0 && (
+          <section className="workspace table-workspace ai-results-workspace">
+            <div className="results-panel">
+              <div className="section-heading">
+                <div><p className="eyebrow">GEMINI ANALYSIS</p><h2>AI 매물 분석</h2></div>
+                <span className="count-pill">{aiResults.length}개 매물</span>
+              </div>
+              <div className="comparison-table-wrap">
+                <table className="comparison-table ai-comparison-table">
+                  <thead><tr><th>순위</th><th>매물</th><th>금액</th><th>CPU</th><th>RAM</th><th>저장장치</th><th>GPU</th><th>AI 점수</th><th>평가</th><th>요약</th><th>장점</th><th>주의사항</th></tr></thead>
+                  <tbody>{aiResults.map((item, index) => (
+                    <tr key={item.id}>
+                      <td><span className="table-rank">{String(index + 1).padStart(2, '0')}</span></td>
+                      <td><div className="ai-product"><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a><span>{item.location ?? '지역 미상'}</span></div></td>
+                      <td className="price-cell">{item.price ? `${item.price.toLocaleString()}원` : '미상'}</td>
+                      <td>{item.cpu}</td><td>{item.ram}</td><td>{item.storage}</td><td>{item.gpu}</td>
+                      <td><span className="ai-score">{item.score}</span></td>
+                      <td><span className={`grade grade-${item.recommendation}`}>{item.recommendation}</span></td>
+                      <td className="ai-text-cell">{item.summary}</td><td className="ai-text-cell">{item.strengths}</td><td className="ai-text-cell">{item.cautions}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="workspace table-workspace">
           <div className="results-panel">
@@ -176,6 +283,21 @@ function getErrorMessage(value: unknown, fallback = '당근 검색에 실패했�
     }
   }
   return fallback;
+}
+
+async function readJsonResponse<T>(response: Response, serverName: string): Promise<T> {
+  const contentType = response.headers.get('content-type') ?? '';
+  const responseText = await response.text();
+  if (!contentType.includes('application/json')) throw new Error(`${serverName}가 JSON이 아닌 응답을 반환했습니다 (HTTP ${response.status}).`);
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    throw new Error(`${serverName} 응답을 읽을 수 없습니다 (HTTP ${response.status}).`);
+  }
+}
+
+function nextPaint() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function formatDate(value?: string) {
