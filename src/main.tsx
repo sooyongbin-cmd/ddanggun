@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
+import { filterListingsForAi } from './ai-listing-filter';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
 import { loadAnalyses, saveAnalyses } from './storage';
@@ -16,7 +17,7 @@ const myComputer = analyze({
   location: '보유 PC',
 });
 
-const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '지역별 매물 조회', '중복 매물 정리', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
+const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '부산 구·군 순차 조회', '중복 매물 정리', 'PC CPU 필터', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
 type AiProgress = { state: 'idle' | 'running' | 'success' | 'error'; activeStep: number; detail: string };
 
 function App() {
@@ -24,7 +25,6 @@ function App() {
   const [keyword, setKeyword] = useState('PC');
   const [minPrice, setMinPrice] = useState('100000');
   const [maxPrice, setMaxPrice] = useState('300000');
-  const [regions, setRegions] = useState({ haeundae: true, suyeong: true });
   const [onlyOnSale, setOnlyOnSale] = useState(true);
   const [aiModel, setAiModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [isFetching, setIsFetching] = useState(false);
@@ -64,11 +64,6 @@ function App() {
   }
 
   async function fetchDanggun() {
-    const selectedRegions = Object.entries(regions).filter(([, selected]) => selected).map(([region]) => region);
-    if (!selectedRegions.length) {
-      setLoadError('조회할 지역을 하나 이상 선택해 주세요.');
-      return;
-    }
     setItems([]);
     setLoadError('');
     setIsFetching(true);
@@ -77,7 +72,6 @@ function App() {
         search: keyword.trim() || 'PC',
         minPrice: minPrice.replace(/[^\d]/g, '') || '0',
         maxPrice: maxPrice.replace(/[^\d]/g, '') || '999999999',
-        regions: selectedRegions.join(','),
         onlyOnSale: String(onlyOnSale),
       });
       const response = await fetch(`/api/danggun-search?${query}`, { headers: { Accept: 'application/json' } });
@@ -103,16 +97,9 @@ function App() {
   }
 
   async function fetchWithAi() {
-    const selectedRegions = Object.entries(regions).filter(([, selected]) => selected).map(([region]) => region);
     setAiResults([]);
     setLoadError('');
-    setAiProgress({ state: 'running', activeStep: 0, detail: '입력한 조회 조건을 확인하고 있습니다.' });
-    if (!selectedRegions.length) {
-      const message = '조회할 지역을 하나 이상 선택해 주세요.';
-      setLoadError(message);
-      setAiProgress({ state: 'error', activeStep: 0, detail: message });
-      return;
-    }
+    setAiProgress({ state: 'running', activeStep: 0, detail: '부산광역시 전체 조회 조건을 확인하고 있습니다.' });
 
     setIsAiFetching(true);
     try {
@@ -121,35 +108,39 @@ function App() {
         search: keyword.trim() || 'PC',
         minPrice: minPrice.replace(/[^\d]/g, '') || '0',
         maxPrice: maxPrice.replace(/[^\d]/g, '') || '999999999',
-        regions: selectedRegions.join(','),
         onlyOnSale: String(onlyOnSale),
       });
       setAiProgress({ state: 'running', activeStep: 1, detail: '조회 조건을 검색 서버에 전달했습니다.' });
       await nextPaint();
-      setAiProgress({ state: 'running', activeStep: 2, detail: '선택한 지역의 매물을 병렬로 조회하고 있습니다.' });
+      setAiProgress({ state: 'running', activeStep: 2, detail: '부산 16개 구·군의 매물을 차례로 조회하고 있습니다.' });
       const searchResponse = await fetch(`/api/danggun-search?${query}`, { headers: { Accept: 'application/json' } });
-      const searchData = await readJsonResponse<{ listings?: Listing[]; searchedRegions?: number; failedRegions?: number; error?: unknown }>(searchResponse, '조회 서버');
+      const searchData = await readJsonResponse<{ listings?: Listing[]; searchedDistricts?: number; failedDistricts?: number; error?: unknown }>(searchResponse, '조회 서버');
       if (!searchResponse.ok) throw new Error(getErrorMessage(searchData.error, '당근 검색에 실패했습니다.'));
 
       const listings = searchData.listings ?? [];
-      setAiProgress({ state: 'running', activeStep: 3, detail: `${searchData.searchedRegions ?? selectedRegions.length}개 지역 조회 후 ${listings.length}개 고유 매물을 정리했습니다.` });
+      setAiProgress({ state: 'running', activeStep: 3, detail: `부산 ${searchData.searchedDistricts ?? 16}개 구·군 조회 후 ${listings.length}개 고유 매물을 정리했습니다.${searchData.failedDistricts ? ` 실패 ${searchData.failedDistricts}개 구·군` : ''}` });
       if (!listings.length) throw new Error('조건에 맞는 판매중 매물이 없습니다.');
 
       await nextPaint();
-      setAiProgress({ state: 'running', activeStep: 4, detail: `${listings.length}개 매물을 Gemini에 분석 요청했습니다.` });
+      const filtered = filterListingsForAi(listings, keyword);
+      setAiProgress({ state: 'running', activeStep: 4, detail: filtered.applied ? `검색어가 PC이므로 CPU 확인 불가 매물 ${filtered.excludedMissingCpu}건을 제외했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.` : `검색어가 PC가 아니므로 CPU 확인 불가 필터를 적용하지 않았습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.` });
+      if (!filtered.listings.length) throw new Error('PC 검색 결과에서 CPU를 확인할 수 있는 매물이 없어 AI 분석을 진행할 수 없습니다.');
+
+      await nextPaint();
+      setAiProgress({ state: 'running', activeStep: 5, detail: `${filtered.listings.length}개 매물을 Gemini에 전달했습니다. 최대 40건을 분석합니다.` });
       const aiResponse = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ listings, model: aiModel }),
+        body: JSON.stringify({ listings: filtered.listings, model: aiModel }),
       });
       const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
       if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));
 
-      setAiProgress({ state: 'running', activeStep: 5, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증했습니다.' });
+      setAiProgress({ state: 'running', activeStep: 6, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증했습니다.' });
       if (!Array.isArray(aiData.analyses) || !aiData.analyses.length) throw new Error('AI 분석 결과가 비어 있습니다.');
       setAiResults(aiData.analyses);
       await nextPaint();
-      setAiProgress({ state: 'success', activeStep: 6, detail: `${aiData.model ?? 'Gemini'} 분석 결과 ${aiData.analyses.length}건을 표시했습니다.${aiData.limited ? ' 최대 40건만 분석했습니다.' : ''}` });
+      setAiProgress({ state: 'success', activeStep: 7, detail: `${aiData.model ?? 'Gemini'} 분석 결과 ${aiData.analyses.length}건을 표시했습니다.${aiData.limited ? ' 최대 40건만 분석했습니다.' : ''}` });
     } catch (error) {
       const message = getErrorMessage(error, 'AI 조회에 실패했습니다.');
       setLoadError(message);
@@ -178,12 +169,12 @@ function App() {
             <label className="search-field field-keyword">검색어<input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="PC" /></label>
             <label className="search-field">최소 금액<input inputMode="numeric" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} placeholder="100000" /></label>
             <label className="search-field">최대 금액<input inputMode="numeric" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="300000" /></label>
-            <fieldset className="search-field region-field"><legend>지역</legend><label><input type="checkbox" checked={regions.haeundae} onChange={(event) => setRegions((previous) => ({ ...previous, haeundae: event.target.checked }))} /> 해운대구</label><label><input type="checkbox" checked={regions.suyeong} onChange={(event) => setRegions((previous) => ({ ...previous, suyeong: event.target.checked }))} /> 수영구</label></fieldset>
             <label className="sale-field"><input type="checkbox" checked={onlyOnSale} onChange={(event) => setOnlyOnSale(event.target.checked)} /> 판매중만</label>
             <label className="search-field model-field">AI 모델<select value={aiModel} disabled={isFetching || isAiFetching} onChange={(event) => setAiModel(event.target.value as GeminiModel)}>{GEMINI_MODELS.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}</select></label>
             <button className="button button-primary" type="submit" disabled={isFetching || isAiFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
             <button className="button button-ai" type="button" disabled={isFetching || isAiFetching} onClick={fetchWithAi}>{isAiFetching ? 'AI 분석 중…' : 'AI조회'}</button>
           </form>
+          <p className="search-condition-note"><strong>조회 범위</strong> 부산광역시 전체 16개 구·군을 차례로 조회합니다. <strong>AI 전달 조건</strong> 검색어가 PC이면 CPU 확인 불가 매물을 제외합니다.</p>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
 
