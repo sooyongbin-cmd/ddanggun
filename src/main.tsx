@@ -221,10 +221,11 @@ function App() {
           {!cpuError && (
             <div className="comparison-table-wrap cpu-catalog-table-wrap" aria-busy={isCpuFetching}>
               <table className="comparison-table cpu-catalog-table">
-                <thead><tr><th>CPU</th><th>제조사</th><th>아키텍처</th><th>코어 / 스레드</th><th>기본 / 최대 클럭</th><th>캐시</th><th>TDP</th><th>출처</th></tr></thead>
+                <thead><tr><th>순위</th><th>CPU</th><th>제조사</th><th>아키텍처</th><th>코어 / 스레드</th><th>기본 / 최대 클럭</th><th>캐시</th><th>TDP</th><th>출처</th></tr></thead>
                 <tbody>
                   {cpuSpecs.map((cpu) => (
                     <tr key={cpu.id}>
+                      <td><span className="cpu-rank-badge">{cpu.performance_rank}위</span></td>
                       <td><strong className="cpu-name">{cpu.cpu_name}</strong></td>
                       <td><span className={`cpu-maker cpu-maker-${cpu.manufacturer.toLowerCase()}`}>{cpu.manufacturer}</span></td>
                       <td>{cpu.architecture ?? '—'}</td>
@@ -235,7 +236,7 @@ function App() {
                       <td><a className="table-link" href={cpu.source_url} target="_blank" rel="noreferrer">공식 사양 ↗</a></td>
                     </tr>
                   ))}
-                  {!isCpuFetching && cpuSpecs.length === 0 && <tr><td className="cpu-empty" colSpan={8}>조건에 맞는 CPU가 없습니다.</td></tr>}
+                  {!isCpuFetching && cpuSpecs.length === 0 && <tr><td className="cpu-empty" colSpan={9}>조건에 맞는 CPU가 없습니다.</td></tr>}
                 </tbody>
               </table>
             </div>

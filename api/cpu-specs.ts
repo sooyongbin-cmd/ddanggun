@@ -8,6 +8,7 @@ const MAX_PAGE = 100;
 const ALLOWED_MANUFACTURERS = new Set(['Intel', 'AMD']);
 const SELECT_COLUMNS = [
   'id',
+  'performance_rank',
   'cpu_name',
   'manufacturer',
   'architecture',
@@ -34,7 +35,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const query = new URLSearchParams({
       select: SELECT_COLUMNS,
-      order: 'manufacturer.asc,cpu_name.asc',
+      order: 'performance_rank.asc,cpu_name.asc',
       limit: String(PAGE_SIZE),
       offset: String(page * PAGE_SIZE),
     });

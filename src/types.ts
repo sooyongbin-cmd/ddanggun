@@ -20,6 +20,7 @@ export type AiListingAnalysis = {
 
 export type CpuSpec = {
   id: number;
+  performance_rank: number;
   cpu_name: string;
   manufacturer: 'Intel' | 'AMD';
   architecture: string | null;

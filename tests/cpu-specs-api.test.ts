@@ -9,7 +9,7 @@ describe('CPU specifications API', () => {
       ok: true,
       status: 200,
       headers: new Headers({ 'content-range': '30-59/242' }),
-      text: async () => JSON.stringify([{ id: 1, cpu_name: 'Intel Core i5-12400' }]),
+      text: async () => JSON.stringify([{ id: 1, performance_rank: 92, cpu_name: 'Intel Core i5-12400' }]),
     });
     vi.stubGlobal('fetch', fetchMock);
     const response = createResponse();
@@ -23,7 +23,10 @@ describe('CPU specifications API', () => {
     expect(requestUrl.searchParams.get('cpu_name')).toBe('ilike.*i5-12400*');
     expect(requestUrl.searchParams.get('manufacturer')).toBe('eq.Intel');
     expect(requestUrl.searchParams.get('offset')).toBe('30');
+    expect(requestUrl.searchParams.get('select')).toContain('performance_rank');
+    expect(requestUrl.searchParams.get('order')).toBe('performance_rank.asc,cpu_name.asc');
     expect(fetchMock.mock.calls[0][1].headers.Prefer).toBe('count=exact');
+    expect(response.json().cpuSpecs[0]).toMatchObject({ performance_rank: 92, cpu_name: 'Intel Core i5-12400' });
   });
 
   it('returns a specific upstream error', async () => {
