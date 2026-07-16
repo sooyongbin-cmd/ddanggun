@@ -16,6 +16,11 @@ const myComputer = analyze({
 
 function App() {
   const [items, setItems] = useState<Analysis[]>(loadAnalyses);
+  const [keyword, setKeyword] = useState('PC');
+  const [minPrice, setMinPrice] = useState('100000');
+  const [maxPrice, setMaxPrice] = useState('300000');
+  const [regions, setRegions] = useState({ haeundae: true, suyeong: true });
+  const [onlyOnSale, setOnlyOnSale] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -50,11 +55,23 @@ function App() {
   }
 
   async function fetchDanggun() {
+    const selectedRegions = Object.entries(regions).filter(([, selected]) => selected).map(([region]) => region);
+    if (!selectedRegions.length) {
+      setLoadError('조회할 지역을 하나 이상 선택해 주세요.');
+      return;
+    }
     setItems([]);
     setLoadError('');
     setIsFetching(true);
     try {
-      const response = await fetch('/api/danggun-search');
+      const query = new URLSearchParams({
+        search: keyword.trim() || 'PC',
+        minPrice: minPrice.replace(/[^\d]/g, '') || '0',
+        maxPrice: maxPrice.replace(/[^\d]/g, '') || '999999999',
+        regions: selectedRegions.join(','),
+        onlyOnSale: String(onlyOnSale),
+      });
+      const response = await fetch(`/api/danggun-search?${query}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '당근 검색에 실패했습니다.');
       importListings(data.listings);
@@ -80,17 +97,15 @@ function App() {
       </nav>
 
       <main id="top">
-        <section className="search-band" aria-labelledby="search-title">
-          <div className="search-intro">
-            <span className="pill-label">LIVE SEARCH</span>
-            <h2 id="search-title">조건에 맞는 매물 조회</h2>
-            <p>해운대구 · 수영구 · 판매중 · 10만~30만 원 · 검색어 PC</p>
-          </div>
-          <div className="search-actions">
-            <button className="button button-primary" disabled={isFetching} onClick={fetchDanggun}>
-              {isFetching ? '검색 결과 가져오는 중…' : '조회하기'}
-            </button>
-          </div>
+        <section className="search-band" aria-label="조회 조건">
+          <form className="search-form" onSubmit={(event) => { event.preventDefault(); fetchDanggun(); }}>
+            <label className="search-field field-keyword">검색어<input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="PC" /></label>
+            <label className="search-field">최소 금액<input inputMode="numeric" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} placeholder="100000" /></label>
+            <label className="search-field">최대 금액<input inputMode="numeric" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="300000" /></label>
+            <fieldset className="search-field region-field"><legend>지역</legend><label><input type="checkbox" checked={regions.haeundae} onChange={(event) => setRegions((previous) => ({ ...previous, haeundae: event.target.checked }))} /> 해운대구</label><label><input type="checkbox" checked={regions.suyeong} onChange={(event) => setRegions((previous) => ({ ...previous, suyeong: event.target.checked }))} /> 수영구</label></fieldset>
+            <label className="sale-field"><input type="checkbox" checked={onlyOnSale} onChange={(event) => setOnlyOnSale(event.target.checked)} /> 판매중만</label>
+            <button className="button button-primary" type="submit" disabled={isFetching}>{isFetching ? '검색 결과 가져오는 중…' : '조회하기'}</button>
+          </form>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
 
