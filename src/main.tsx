@@ -21,6 +21,7 @@ function App() {
   const [aiProgress, setAiProgress] = useState<AiProgress>({ state: 'idle', activeStep: -1, detail: '' });
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [removedDuplicateCount, setRemovedDuplicateCount] = useState<number | null>(null);
+  const [selectedAnalysisCount, setSelectedAnalysisCount] = useState<number | null>(null);
   const [cpuSearch, setCpuSearch] = useState('');
   const [cpuManufacturer, setCpuManufacturer] = useState('');
   const [cpuSpecs, setCpuSpecs] = useState<CpuSpec[]>([]);
@@ -67,6 +68,7 @@ function App() {
     setLoadError('');
     setSearchResultCount(null);
     setRemovedDuplicateCount(null);
+    setSelectedAnalysisCount(null);
     setAiProgress({ state: 'running', activeStep: 0, detail: '부산광역시 전체 조회 조건을 확인하고 있습니다.' });
 
     setIsAiFetching(true);
@@ -110,6 +112,7 @@ function App() {
         cpuMatches = cpuData.matches ?? {};
       }
       const filtered = selectListingsForAi(prepared, cpuMatches);
+      setSelectedAnalysisCount(filtered.listings.length);
       setAiProgress({
         state: 'running',
         activeStep: 4,
@@ -182,6 +185,8 @@ function App() {
                   ? `${step} (총 ${searchResultCount}건)`
                   : index === 3 && removedDuplicateCount !== null
                     ? `${step} (${removedDuplicateCount}건 제거)`
+                    : index === 4 && selectedAnalysisCount !== null
+                      ? `${step} (${selectedAnalysisCount}건)`
                     : step;
                 return <li className={`progress-step step-${status}`} key={step}><span>{status === 'done' ? '✓' : index + 1}</span><strong>{label}</strong></li>;
               })}
