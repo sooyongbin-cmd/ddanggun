@@ -19,12 +19,14 @@ function App() {
   const [loadError, setLoadError] = useState('');
   const [aiResults, setAiResults] = useState<AiListingAnalysis[]>([]);
   const [aiProgress, setAiProgress] = useState<AiProgress>({ state: 'idle', activeStep: -1, detail: '' });
-  const [deduplicatedCount, setDeduplicatedCount] = useState<number | null>(null);
+  const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
+  const [removedDuplicateCount, setRemovedDuplicateCount] = useState<number | null>(null);
 
   async function fetchWithAi() {
     setAiResults([]);
     setLoadError('');
-    setDeduplicatedCount(null);
+    setSearchResultCount(null);
+    setRemovedDuplicateCount(null);
     setAiProgress({ state: 'running', activeStep: 0, detail: '부산광역시 전체 조회 조건을 확인하고 있습니다.' });
 
     setIsAiFetching(true);
@@ -45,13 +47,14 @@ function App() {
       if (!searchResponse.ok) throw new Error(getErrorMessage(searchData.error, '당근 검색에 실패했습니다.'));
 
       const listings = searchData.listings ?? [];
+      setSearchResultCount(listings.length);
       setAiProgress({ state: 'running', activeStep: 3, detail: `부산 ${searchData.searchedDistricts ?? 16}개 구·군 조회 후 ${listings.length}개 고유 매물을 정리했습니다.${searchData.failedDistricts ? ` 실패 ${searchData.failedDistricts}개 구·군` : ''}` });
       if (!listings.length) throw new Error('조건에 맞는 판매중 매물이 없습니다.');
 
       await nextPaint();
       const filtered = filterListingsForAi(listings, searchKeyword);
       const uniqueContentCount = listings.length - filtered.excludedDuplicates;
-      setDeduplicatedCount(uniqueContentCount);
+      setRemovedDuplicateCount(filtered.excludedDuplicates);
       setAiProgress({ state: 'running', activeStep: 3, detail: `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건을 제거한 후 ${uniqueContentCount}건이 남았습니다.` });
       await nextPaint();
       setAiProgress({
@@ -118,7 +121,11 @@ function App() {
             <ol className="progress-steps">
               {AI_STEPS.map((step, index) => {
                 const status = index < aiProgress.activeStep || aiProgress.state === 'success' ? 'done' : index === aiProgress.activeStep ? aiProgress.state : 'pending';
-                const label = index === 3 && deduplicatedCount !== null ? `${step} (${deduplicatedCount}건)` : step;
+                const label = index === 2 && searchResultCount !== null
+                  ? `${step} (총 ${searchResultCount}건)`
+                  : index === 3 && removedDuplicateCount !== null
+                    ? `${step} (${removedDuplicateCount}건 제거)`
+                    : step;
                 return <li className={`progress-step step-${status}`} key={step}><span>{status === 'done' ? '✓' : index + 1}</span><strong>{label}</strong></li>;
               })}
             </ol>
