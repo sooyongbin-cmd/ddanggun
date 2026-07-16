@@ -22,6 +22,7 @@ function App() {
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [removedDuplicateCount, setRemovedDuplicateCount] = useState<number | null>(null);
   const [selectedAnalysisCount, setSelectedAnalysisCount] = useState<number | null>(null);
+  const [validatedResponseCount, setValidatedResponseCount] = useState<number | null>(null);
   const [cpuSearch, setCpuSearch] = useState('');
   const [cpuManufacturer, setCpuManufacturer] = useState('');
   const [cpuSpecs, setCpuSpecs] = useState<CpuSpec[]>([]);
@@ -69,6 +70,7 @@ function App() {
     setSearchResultCount(null);
     setRemovedDuplicateCount(null);
     setSelectedAnalysisCount(null);
+    setValidatedResponseCount(null);
     setAiProgress({ state: 'running', activeStep: 0, detail: '부산광역시 전체 조회 조건을 확인하고 있습니다.' });
 
     setIsAiFetching(true);
@@ -132,8 +134,10 @@ function App() {
       const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
       if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));
 
-      setAiProgress({ state: 'running', activeStep: 6, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증했습니다.' });
+      setAiProgress({ state: 'running', activeStep: 6, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증하고 있습니다.' });
       if (!Array.isArray(aiData.analyses) || !aiData.analyses.length) throw new Error('AI 분석 결과가 비어 있습니다.');
+      setValidatedResponseCount(aiData.analyses.length);
+      setAiProgress({ state: 'running', activeStep: 6, detail: `Gemini JSON 응답 ${aiData.analyses.length}건의 필드와 매물 ID를 검증했습니다.` });
       const analysesWithCpuSpecs = aiData.analyses.map((analysis) => ({
         ...analysis,
         ...(filtered.cpuSpecsByListingId[analysis.id] ? { cpuSpec: filtered.cpuSpecsByListingId[analysis.id] } : {}),
@@ -187,6 +191,8 @@ function App() {
                     ? `${step} (${removedDuplicateCount}건 제거)`
                     : index === 4 && selectedAnalysisCount !== null
                       ? `${step} (${selectedAnalysisCount}건)`
+                      : index === 6 && validatedResponseCount !== null
+                        ? `${step} (${validatedResponseCount}건)`
                     : step;
                 return <li className={`progress-step step-${status}`} key={step}><span>{status === 'done' ? '✓' : index + 1}</span><strong>{label}</strong></li>;
               })}
