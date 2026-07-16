@@ -1,10 +1,19 @@
-import { getCpuPerformanceScore, parseSpecs } from './analyzer';
-import type { Listing } from './types';
+import { parseSpecs } from './analyzer';
+import type { CpuSpec, Listing } from './types';
 
 export const MAX_AI_LISTINGS = 40;
 
+export type AiCpuCandidate = { id: string; cpu: string };
+export type AiListingPreparation = {
+  uniqueListings: Listing[];
+  cpuCandidates: AiCpuCandidate[];
+  applied: boolean;
+  excludedDuplicates: number;
+  excludedMissingCpuText: number;
+};
 export type AiListingFilterResult = {
   listings: Listing[];
+  cpuSpecsByListingId: Record<string, CpuSpec>;
   applied: boolean;
   excludedDuplicates: number;
   excludedMissingCpu: number;
@@ -12,28 +21,50 @@ export type AiListingFilterResult = {
   eligibleBeforeLimit: number;
 };
 
-export function filterListingsForAi(listings: Listing[], keyword: string): AiListingFilterResult {
+export function prepareListingsForAi(listings: Listing[], keyword: string): AiListingPreparation {
   const uniqueListings = keepFirstListingByContent(listings);
   const applied = keyword.trim().toLocaleUpperCase() === 'PC';
-  const candidates = applied
-    ? uniqueListings
-      .map((listing, index) => {
-        const cpu = parseSpecs(`${listing.body ?? ''} ${listing.title}`).cpu;
-        return { listing, index, cpu, performance: getCpuPerformanceScore(cpu) };
-      })
-      .filter((item) => item.cpu)
-      .sort((a, b) => b.performance - a.performance || a.index - b.index)
-      .map((item) => item.listing)
-    : uniqueListings;
-
+  const cpuCandidates = applied
+    ? uniqueListings.flatMap((listing) => {
+      const cpu = parseSpecs(`${listing.body ?? ''} ${listing.title}`).cpu;
+      return cpu ? [{ id: listing.id, cpu }] : [];
+    })
+    : [];
   return {
-    listings: candidates.slice(0, MAX_AI_LISTINGS),
+    uniqueListings,
+    cpuCandidates,
     applied,
     excludedDuplicates: listings.length - uniqueListings.length,
-    excludedMissingCpu: applied ? uniqueListings.length - candidates.length : 0,
+    excludedMissingCpuText: applied ? uniqueListings.length - cpuCandidates.length : 0,
+  };
+}
+
+export function selectListingsForAi(
+  preparation: AiListingPreparation,
+  cpuMatches: Record<string, CpuSpec> = {},
+): AiListingFilterResult {
+  const candidates = preparation.applied
+    ? preparation.uniqueListings
+      .flatMap((listing, index) => {
+        const cpuSpec = cpuMatches[listing.id];
+        return cpuSpec ? [{ listing, index, cpuSpec }] : [];
+      })
+      .sort((a, b) => a.cpuSpec.performance_rank - b.cpuSpec.performance_rank || a.index - b.index)
+    : preparation.uniqueListings.map((listing, index) => ({ listing, index, cpuSpec: undefined }));
+  const selected = candidates.slice(0, MAX_AI_LISTINGS);
+  return {
+    listings: selected.map((item) => item.listing),
+    cpuSpecsByListingId: Object.fromEntries(selected.flatMap((item) => item.cpuSpec ? [[item.listing.id, item.cpuSpec]] : [])),
+    applied: preparation.applied,
+    excludedDuplicates: preparation.excludedDuplicates,
+    excludedMissingCpu: preparation.applied ? preparation.uniqueListings.length - candidates.length : 0,
     excludedByLimit: Math.max(0, candidates.length - MAX_AI_LISTINGS),
     eligibleBeforeLimit: candidates.length,
   };
+}
+
+export function filterListingsForAi(listings: Listing[], keyword: string, cpuMatches: Record<string, CpuSpec> = {}) {
+  return selectListingsForAi(prepareListingsForAi(listings, keyword), cpuMatches);
 }
 
 function keepFirstListingByContent(listings: Listing[]) {

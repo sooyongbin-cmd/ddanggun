@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { filterListingsForAi, MAX_AI_LISTINGS } from './ai-listing-filter';
+import { MAX_AI_LISTINGS, prepareListingsForAi, selectListingsForAi } from './ai-listing-filter';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
 import type { AiListingAnalysis, CpuSpec, Listing } from './types';
@@ -92,19 +92,32 @@ function App() {
       if (!listings.length) throw new Error('조건에 맞는 판매중 매물이 없습니다.');
 
       await nextPaint();
-      const filtered = filterListingsForAi(listings, searchKeyword);
-      const uniqueContentCount = listings.length - filtered.excludedDuplicates;
-      setRemovedDuplicateCount(filtered.excludedDuplicates);
-      setAiProgress({ state: 'running', activeStep: 3, detail: `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건을 제거한 후 ${uniqueContentCount}건이 남았습니다.` });
+      const prepared = prepareListingsForAi(listings, searchKeyword);
+      const uniqueContentCount = prepared.uniqueListings.length;
+      setRemovedDuplicateCount(prepared.excludedDuplicates);
+      setAiProgress({ state: 'running', activeStep: 3, detail: `제목·본문이 동일한 중복 ${prepared.excludedDuplicates}건을 제거한 후 ${uniqueContentCount}건이 남았습니다.` });
       await nextPaint();
+      let cpuMatches: Record<string, CpuSpec> = {};
+      if (prepared.applied && prepared.cpuCandidates.length > 0) {
+        setAiProgress({ state: 'running', activeStep: 4, detail: `CPU 정보가 확인된 ${prepared.cpuCandidates.length}건을 DB의 CPU 성능 순위와 매칭하고 있습니다.` });
+        const cpuResponse = await fetch('/api/cpu-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ items: prepared.cpuCandidates }),
+        });
+        const cpuData = await readJsonResponse<{ matches?: Record<string, CpuSpec>; error?: unknown }>(cpuResponse, 'CPU 순위 서버');
+        if (!cpuResponse.ok) throw new Error(getErrorMessage(cpuData.error, 'DB에서 CPU 성능 순위를 조회하지 못했습니다.'));
+        cpuMatches = cpuData.matches ?? {};
+      }
+      const filtered = selectListingsForAi(prepared, cpuMatches);
       setAiProgress({
         state: 'running',
         activeStep: 4,
         detail: filtered.applied
-          ? `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건과 CPU 확인 불가 ${filtered.excludedMissingCpu}건을 제외한 뒤, CPU 성능이 높은 순서로 ${filtered.eligibleBeforeLimit}건 중 최대 ${MAX_AI_LISTINGS}건을 선정했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.`
+          ? `중복 제거 후 CPU 정보가 없거나 DB 순위와 매칭되지 않은 ${filtered.excludedMissingCpu}건을 제외하고, DB CPU 성능 순위가 높은 순서로 ${filtered.eligibleBeforeLimit}건 중 최대 ${MAX_AI_LISTINGS}건을 선정했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.`
           : `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건을 제외하고 조회 순서대로 최대 ${MAX_AI_LISTINGS}건을 선정했습니다. AI 전달 대상은 ${filtered.listings.length}건입니다.`,
       });
-      if (!filtered.listings.length) throw new Error('PC 검색 결과에서 CPU를 확인할 수 있는 매물이 없어 AI 분석을 진행할 수 없습니다.');
+      if (!filtered.listings.length) throw new Error('PC 검색 결과에서 DB CPU 순위와 매칭되는 매물이 없어 AI 분석을 진행할 수 없습니다.');
 
       await nextPaint();
       setAiProgress({ state: 'running', activeStep: 5, detail: `${filtered.listings.length}개 매물의 id·제목·가격·본문을 하나의 JSON 배열로 Gemini에 전달했습니다. location은 전달하지 않습니다.` });
@@ -118,9 +131,13 @@ function App() {
 
       setAiProgress({ state: 'running', activeStep: 6, detail: 'Gemini JSON 응답의 필드와 매물 ID를 검증했습니다.' });
       if (!Array.isArray(aiData.analyses) || !aiData.analyses.length) throw new Error('AI 분석 결과가 비어 있습니다.');
-      setAiResults(aiData.analyses);
+      const analysesWithCpuSpecs = aiData.analyses.map((analysis) => ({
+        ...analysis,
+        ...(filtered.cpuSpecsByListingId[analysis.id] ? { cpuSpec: filtered.cpuSpecsByListingId[analysis.id] } : {}),
+      }));
+      setAiResults(analysesWithCpuSpecs);
       await nextPaint();
-      setAiProgress({ state: 'success', activeStep: 7, detail: `${aiData.model ?? 'Gemini'} 분석 결과 ${aiData.analyses.length}건을 표시했습니다.${aiData.limited ? ' 최대 40건만 분석했습니다.' : ''}` });
+      setAiProgress({ state: 'success', activeStep: 7, detail: `${aiData.model ?? 'Gemini'} 분석 결과 ${analysesWithCpuSpecs.length}건과 DB CPU 정보를 표시했습니다.${aiData.limited ? ' 최대 40건만 분석했습니다.' : ''}` });
     } catch (error) {
       const message = getErrorMessage(error, 'AI 조회에 실패했습니다.');
       setLoadError(message);
@@ -148,7 +165,7 @@ function App() {
             <label className="search-field model-field">AI 모델<select value={aiModel} disabled={isAiFetching} onChange={(event) => setAiModel(event.target.value as GeminiModel)}>{GEMINI_MODELS.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}</select></label>
             <button className="button button-ai" type="submit" disabled={isAiFetching}>{isAiFetching ? 'AI 분석 중…' : 'AI조회'}</button>
           </form>
-          <p className="search-condition-note"><strong>조회 범위</strong> 부산광역시 전체 16개 구·군을 차례로 조회합니다. <strong>AI 전달 조건</strong> 제목과 본문이 동일하면 최초 id 한 건만 사용합니다. 검색어가 PC이면 CPU 확인 불가 매물을 제외하고 CPU 성능이 높은 순서로 최대 {MAX_AI_LISTINGS}건을 선정합니다. 지역 정보는 Gemini에 전달하지 않습니다.</p>
+          <p className="search-condition-note"><strong>조회 범위</strong> 부산광역시 전체 16개 구·군을 차례로 조회합니다. <strong>AI 전달 조건</strong> 제목과 본문이 동일하면 최초 id 한 건만 사용합니다. 검색어가 PC이면 CPU 모델을 DB와 매칭하고, DB 순위가 확인되지 않는 매물을 제외한 뒤 CPU 성능 순위가 높은 순서로 최대 {MAX_AI_LISTINGS}건을 선정합니다. 지역 정보는 Gemini에 전달하지 않습니다.</p>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
 
@@ -182,7 +199,7 @@ function App() {
               </div>
               <div className="comparison-table-wrap">
                 <table className="comparison-table ai-comparison-table">
-                  <thead><tr><th>순위</th><th>매물</th><th>금액</th><th>물품 종류</th><th>주요 정보</th><th>AI 점수</th><th>평가</th><th>요약</th><th>장점</th><th>주의사항</th></tr></thead>
+                  <thead><tr><th>순위</th><th>매물</th><th>금액</th><th>물품 종류</th><th>주요 정보</th><th>DB CPU 정보</th><th>AI 점수</th><th>평가</th><th>요약</th><th>장점</th><th>주의사항</th></tr></thead>
                   <tbody>{aiResults.map((item, index) => (
                     <tr key={item.id}>
                       <td><span className="table-rank">{String(index + 1).padStart(2, '0')}</span></td>
@@ -190,6 +207,7 @@ function App() {
                       <td className="price-cell">{item.price ? `${item.price.toLocaleString()}원` : '미상'}</td>
                       <td><span className="ai-category">{item.category}</span></td>
                       <td><AiAttributes attributes={item.attributes} /></td>
+                      <td><DbCpuDetails cpuSpec={item.cpuSpec} /></td>
                       <td><span className="ai-score">{item.score}</span></td>
                       <td><span className={`grade grade-${item.recommendation}`}>{item.recommendation}</span></td>
                       <td className="ai-text-cell">{item.summary}</td><td className="ai-text-cell">{item.strengths}</td><td className="ai-text-cell">{item.cautions}</td>
@@ -282,6 +300,20 @@ function AiAttributes({ attributes }: { attributes: AiListingAnalysis['attribute
         </div>
       ))}
     </dl>
+  );
+}
+
+function DbCpuDetails({ cpuSpec }: { cpuSpec?: CpuSpec }) {
+  if (!cpuSpec) return <span className="missing">DB CPU 매칭 없음</span>;
+  return (
+    <div className="ai-cpu-details">
+      <strong>{cpuSpec.cpu_name}<b>{cpuSpec.performance_rank}위</b></strong>
+      <span>{cpuSpec.architecture ?? '아키텍처 미상'} · {cpuSpec.cores}코어 / {cpuSpec.threads}스레드</span>
+      <span>기본 {formatClock(cpuSpec.base_clock_ghz)} · 최대 {formatClock(cpuSpec.boost_clock_ghz)}</span>
+      <span>캐시 {formatMetric(cpuSpec.cache_mb, 'MB')} · TDP {formatMetric(cpuSpec.tdp_watts, 'W')}</span>
+      <span>종합 <b>{cpuSpec.performance_score.toLocaleString()}점</b> · 싱글 {cpuSpec.single_core_score.toLocaleString()} · 멀티 {cpuSpec.multi_core_score.toLocaleString()}</span>
+      <small>{cpuSpec.benchmark_name} · {cpuSpec.benchmark_version}</small>
+    </div>
   );
 }
 

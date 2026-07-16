@@ -4,6 +4,10 @@ describe('PC analyzer', () => {
   it('extracts common PC specifications and scores a complete listing', () => { const x = analyze({ id:'1', title:'i5-10400 RAM 16GB SSD 512GB 본체', price:300000, url:'https://x' }); expect(x.specs.ramGb).toBe(16); expect(x.specs.storageGb).toBe(512); expect(x.valueScore).not.toBeNull(); expect(x.confidence).toBe('high'); });
   it('flags missing or negotiable prices', () => { const x = analyze({ id:'2', title:'i3 8GB PC', price:null, url:'https://x' }); expect(x.flags).toContain('가격 확인 필요'); expect(x.valueScore).toBeNull(); });
   it('recognizes Ryzen notation', () => expect(parseSpecs('라이젠 5 5600 ram: 16g ssd 1tb').cpu).toMatch(/라이젠/i));
+  it('recognizes catalog Core Ultra and Athlon models', () => {
+    expect(parseSpecs('Intel Core Ultra 5 245K 데스크톱').cpu).toMatch(/Ultra/i);
+    expect(parseSpecs('AMD Athlon 3000G 본체').cpu).toMatch(/Athlon/i);
+  });
   it('extracts capacity and type when capacity comes before the storage type', () => { const specs = parseSpecs('DDR4 8GB RAM\n240GB SSD가 탑재되어 있어요'); expect(specs.storageGb).toBe(240); expect(specs.storageType).toBe('SSD'); });
   it('does not mistake SSD capacity for RAM in a compact specification title', () => { const x = analyze({ id:'tablet', title:'삼성 태블릿 PC i5-3337U 4GB RAM 512GB SSD', body:'인텔 코어 i5-3337U CPU, 4GB RAM, 512GB SSD', price:180000, url:'https://x' }); expect(x.specs.ramGb).toBe(4); expect(x.specs.storageGb).toBe(512); expect(x.specs.storageType).toBe('SSD'); });
   it('orders newer and higher-tier CPUs above older mobile CPUs', () => { expect(getCpuPerformanceScore('i5-10400')).toBeGreaterThan(getCpuPerformanceScore('i5-6500')); expect(getCpuPerformanceScore('i5-6500')).toBeGreaterThan(getCpuPerformanceScore('i5-3337U')); expect(getCpuPerformanceScore('Ryzen 5 5600')).toBeGreaterThan(getCpuPerformanceScore('i5-10400')); });

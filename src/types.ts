@@ -16,11 +16,15 @@ export type AiListingAnalysis = {
   summary: string;
   strengths: string;
   cautions: string;
+  cpuSpec?: CpuSpec;
 };
 
 export type CpuSpec = {
   id: number;
   performance_rank: number;
+  performance_score: number;
+  single_core_score: number;
+  multi_core_score: number;
   cpu_name: string;
   manufacturer: 'Intel' | 'AMD';
   architecture: string | null;
@@ -30,5 +34,7 @@ export type CpuSpec = {
   boost_clock_ghz: number | null;
   cache_mb: number | null;
   tdp_watts: number | null;
+  benchmark_name: string;
+  benchmark_version: string;
   source_url: string;
 };

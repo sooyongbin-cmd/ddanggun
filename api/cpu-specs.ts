@@ -9,6 +9,9 @@ const ALLOWED_MANUFACTURERS = new Set(['Intel', 'AMD']);
 const SELECT_COLUMNS = [
   'id',
   'performance_rank',
+  'performance_score',
+  'single_core_score',
+  'multi_core_score',
   'cpu_name',
   'manufacturer',
   'architecture',
@@ -18,6 +21,8 @@ const SELECT_COLUMNS = [
   'boost_clock_ghz',
   'cache_mb',
   'tdp_watts',
+  'benchmark_name',
+  'benchmark_version',
   'source_url',
 ].join(',');
 

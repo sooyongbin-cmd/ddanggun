@@ -5,7 +5,7 @@ const cpuScores: [RegExp, number][] = [
   [/i[357][ -]?(4|5)\d{3}/i, 62], [/ryzen\s?[357]\s?[234]\d{2,3}/i, 60],
   [/i[357][ -]?[23]\d{3}/i, 42], [/i[357][ -]?\d{3}/i, 26], [/pentium|celeron|atom/i, 12]
 ];
-function findCpu(text: string) { const m = text.match(/(?:intel\s*)?(?:core\s*)?i[3579][ -]?\d{3,5}[a-z]*|(?:(?:amd\s*)?ryzen|라이젠)\s?[3579]\s?\d{3,4}[a-z]*/i); return m?.[0]; }
+function findCpu(text: string) { const m = text.match(/(?:intel\s*)?core\s*ultra\s*(?:[579]\s*)?\d{3}[a-z]*(?:\s*plus)?|(?:intel\s*)?(?:core\s*)?i[3579][ -]?\d{3,5}[a-z]*|(?:(?:amd\s*)?ryzen|라이젠)\s?[3579]\s?\d{3,4}[a-z]*|(?:amd\s*)?athlon(?:\s+pro)?\s*\d{3,4}[a-z]*/i); return m?.[0]; }
 function parseRam(text: string) {
   const sizeFirst = text.match(/(\d{1,3})\s*(?:gb|g)\s*(?:ram|램|메모리)(?![a-z0-9])/i);
   if (sizeFirst) return Number(sizeFirst[1]);
