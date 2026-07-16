@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { filterListingsForAi, MAX_AI_LISTINGS } from './ai-listing-filter';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
-import type { AiListingAnalysis, Listing } from './types';
+import type { AiListingAnalysis, CpuSpec, Listing } from './types';
 import './style.css';
 
 const AI_STEPS = ['입력 조건 검증', '검색 API 요청', '부산 구·군 순차 조회', '동일 내용 중복 제거', 'AI 분석 대상 선정', 'Gemini AI 분석', 'JSON 응답 검증', '결과 표 표시'] as const;
@@ -21,6 +21,46 @@ function App() {
   const [aiProgress, setAiProgress] = useState<AiProgress>({ state: 'idle', activeStep: -1, detail: '' });
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [removedDuplicateCount, setRemovedDuplicateCount] = useState<number | null>(null);
+  const [cpuSearch, setCpuSearch] = useState('');
+  const [cpuManufacturer, setCpuManufacturer] = useState('');
+  const [cpuSpecs, setCpuSpecs] = useState<CpuSpec[]>([]);
+  const [cpuTotal, setCpuTotal] = useState<number | null>(null);
+  const [cpuPage, setCpuPage] = useState(0);
+  const [cpuHasNext, setCpuHasNext] = useState(false);
+  const [isCpuFetching, setIsCpuFetching] = useState(false);
+  const [cpuError, setCpuError] = useState('');
+
+  useEffect(() => {
+    void fetchCpuSpecs(0);
+  }, []);
+
+  async function fetchCpuSpecs(page: number) {
+    setIsCpuFetching(true);
+    setCpuError('');
+    try {
+      const query = new URLSearchParams({ page: String(page) });
+      if (cpuSearch.trim()) query.set('search', cpuSearch.trim());
+      if (cpuManufacturer) query.set('manufacturer', cpuManufacturer);
+      const response = await fetch(`/api/cpu-specs?${query}`, { headers: { Accept: 'application/json' } });
+      const data = await readJsonResponse<{
+        cpuSpecs?: CpuSpec[];
+        total?: number | null;
+        page?: number;
+        hasNext?: boolean;
+        error?: unknown;
+      }>(response, 'CPU 정보 서버');
+      if (!response.ok) throw new Error(getErrorMessage(data.error, 'CPU 정보를 조회하지 못했습니다.'));
+      setCpuSpecs(data.cpuSpecs ?? []);
+      setCpuTotal(data.total ?? null);
+      setCpuPage(data.page ?? page);
+      setCpuHasNext(Boolean(data.hasNext));
+    } catch (error) {
+      setCpuSpecs([]);
+      setCpuError(getErrorMessage(error, 'CPU 정보를 조회하지 못했습니다.'));
+    } finally {
+      setIsCpuFetching(false);
+    }
+  }
 
   async function fetchWithAi() {
     setAiResults([]);
@@ -161,6 +201,55 @@ function App() {
           </section>
         )}
 
+        <section className="cpu-catalog-section" aria-labelledby="cpu-catalog-title">
+          <div className="section-heading cpu-catalog-heading">
+            <div>
+              <p className="eyebrow">CPU SPECIFICATIONS</p>
+              <h2 id="cpu-catalog-title">CPU 사양 조회</h2>
+              <p>공식 제조사 자료를 기준으로 등록된 데스크톱 CPU 정보를 조회합니다.</p>
+            </div>
+            <span className="count-pill">{cpuTotal === null ? '조회 중' : `${cpuTotal.toLocaleString()}개 CPU`}</span>
+          </div>
+
+          <form className="cpu-catalog-filters" onSubmit={(event) => { event.preventDefault(); void fetchCpuSpecs(0); }}>
+            <label className="search-field">CPU 이름<input value={cpuSearch} onChange={(event) => setCpuSearch(event.target.value)} placeholder="예: Ryzen 5 5600, i5-12400" /></label>
+            <label className="search-field">제조사<select value={cpuManufacturer} onChange={(event) => setCpuManufacturer(event.target.value)}><option value="">전체</option><option value="Intel">Intel</option><option value="AMD">AMD</option></select></label>
+            <button className="button button-primary" type="submit" disabled={isCpuFetching}>{isCpuFetching ? '조회 중…' : 'CPU 조회'}</button>
+          </form>
+
+          {cpuError && <p className="alert cpu-catalog-alert" role="alert">{cpuError}</p>}
+          {!cpuError && (
+            <div className="comparison-table-wrap cpu-catalog-table-wrap" aria-busy={isCpuFetching}>
+              <table className="comparison-table cpu-catalog-table">
+                <thead><tr><th>CPU</th><th>제조사</th><th>아키텍처</th><th>코어 / 스레드</th><th>기본 / 최대 클럭</th><th>캐시</th><th>TDP</th><th>출처</th></tr></thead>
+                <tbody>
+                  {cpuSpecs.map((cpu) => (
+                    <tr key={cpu.id}>
+                      <td><strong className="cpu-name">{cpu.cpu_name}</strong></td>
+                      <td><span className={`cpu-maker cpu-maker-${cpu.manufacturer.toLowerCase()}`}>{cpu.manufacturer}</span></td>
+                      <td>{cpu.architecture ?? '—'}</td>
+                      <td><strong>{cpu.cores}</strong>코어 / <strong>{cpu.threads}</strong>스레드</td>
+                      <td>{formatClock(cpu.base_clock_ghz)} / {formatClock(cpu.boost_clock_ghz)}</td>
+                      <td>{formatMetric(cpu.cache_mb, 'MB')}</td>
+                      <td>{formatMetric(cpu.tdp_watts, 'W')}</td>
+                      <td><a className="table-link" href={cpu.source_url} target="_blank" rel="noreferrer">공식 사양 ↗</a></td>
+                    </tr>
+                  ))}
+                  {!isCpuFetching && cpuSpecs.length === 0 && <tr><td className="cpu-empty" colSpan={8}>조건에 맞는 CPU가 없습니다.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="cpu-catalog-footer">
+            <p>클럭·캐시·TDP는 제조사 공식 사양이며, 벤치마크 점수는 동일 기준의 출처가 확정될 때까지 표시하지 않습니다.</p>
+            <div className="cpu-pagination" aria-label="CPU 목록 페이지 이동">
+              <button className="button button-outline button-small" type="button" disabled={isCpuFetching || cpuPage === 0} onClick={() => void fetchCpuSpecs(cpuPage - 1)}>이전</button>
+              <span>{cpuPage + 1}페이지</span>
+              <button className="button button-outline button-small" type="button" disabled={isCpuFetching || !cpuHasNext} onClick={() => void fetchCpuSpecs(cpuPage + 1)}>다음</button>
+            </div>
+          </div>
+        </section>
+
       </main>
       <footer><span>AI LISTING ANALYZER</span><span>AI 분석 결과는 현재 세션에만 표시됩니다.</span></footer>
     </div>
@@ -169,6 +258,14 @@ function App() {
 
 function nextPaint() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function formatClock(value: number | null) {
+  return value === null ? '—' : `${Number(value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} GHz`;
+}
+
+function formatMetric(value: number | null, unit: string) {
+  return value === null ? '—' : `${Number(value).toLocaleString()} ${unit}`;
 }
 
 function AiAttributes({ attributes }: { attributes: AiListingAnalysis['attributes'] }) {

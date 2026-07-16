@@ -54,5 +54,20 @@ begin
   ) then
     raise exception 'Intel Core i5-12400 reference specification is incorrect or missing';
   end if;
+
+  if not has_table_privilege('anon', 'public.cpu_specs', 'SELECT') then
+    raise exception 'anon does not have read-only access to public.cpu_specs';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'cpu_specs'
+      and policyname = 'Public can read CPU specifications'
+      and cmd = 'SELECT'
+  ) then
+    raise exception 'public.cpu_specs public SELECT policy is missing';
+  end if;
 end
 $$;

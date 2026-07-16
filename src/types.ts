@@ -17,3 +17,17 @@ export type AiListingAnalysis = {
   strengths: string;
   cautions: string;
 };
+
+export type CpuSpec = {
+  id: number;
+  cpu_name: string;
+  manufacturer: 'Intel' | 'AMD';
+  architecture: string | null;
+  cores: number;
+  threads: number;
+  base_clock_ghz: number | null;
+  boost_clock_ghz: number | null;
+  cache_mb: number | null;
+  tdp_watts: number | null;
+  source_url: string;
+};
