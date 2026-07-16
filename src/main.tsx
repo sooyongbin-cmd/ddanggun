@@ -124,7 +124,7 @@ function App() {
       const aiResponse = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ listings: filtered.listings, model: aiModel, keyword: searchKeyword }),
+        body: JSON.stringify({ listings: filtered.listings, model: aiModel }),
       });
       const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
       if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));

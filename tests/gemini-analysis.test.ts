@@ -40,7 +40,7 @@ describe('Gemini analysis API', () => {
     const prompt = requestBody.contents[0].parts[0].text as string;
     const promptListings = JSON.parse(prompt.slice(prompt.indexOf('[')));
     expect(promptListings).toEqual([{ id: 'listing-1', title: '게이밍 PC', price: 250000, body: 'i5-10400 RAM 16GB' }]);
-    expect(prompt).toContain('검색어가 PC이므로');
+    expect(prompt).not.toContain('검색어가 PC이므로');
     expect(prompt).not.toContain('"location"');
     expect(prompt).not.toContain('우동');
   });
