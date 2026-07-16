@@ -18,6 +18,10 @@ describe('filterListingsForAi', () => {
     const result = filterListingsForAi(listings, 'PC', {});
     expect(result.listings).toEqual([]);
     expect(result.excludedMissingCpu).toBe(2);
+    expect(result.selectionDecisions).toMatchObject([
+      { listing: { id: 'known' }, detectedCpu: 'i5-10400', selected: false, reason: 'db-unmatched' },
+      { listing: { id: 'unknown' }, selected: false, reason: 'cpu-missing' },
+    ]);
   });
 
   it('keeps all listings for other search terms', () => {
@@ -60,6 +64,9 @@ describe('filterListingsForAi', () => {
     expect(result.cpuSpecsByListingId.fastest.performance_rank).toBe(50);
     expect(result.excludedByLimit).toBe(3);
     expect(result.eligibleBeforeLimit).toBe(43);
+    expect(result.selectionDecisions.filter((item) => item.selected)).toHaveLength(40);
+    expect(result.selectionDecisions.filter((item) => item.reason === 'limit-exceeded')).toHaveLength(3);
+    expect(result.selectionDecisions[0]).toMatchObject({ listing: { id: 'fastest' }, detectedCpu: 'Ryzen 5 7600', selected: true, reason: 'selected' });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MAX_AI_LISTINGS, prepareListingsForAi, selectListingsForAi } from './ai-listing-filter';
+import { MAX_AI_LISTINGS, prepareListingsForAi, selectListingsForAi, type AiSelectionDecision } from './ai-listing-filter';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
 import { getErrorMessage, readJsonResponse } from './http';
 import type { AiListingAnalysis, CpuSpec, Listing } from './types';
@@ -23,6 +23,7 @@ function App() {
   const [removedDuplicateCount, setRemovedDuplicateCount] = useState<number | null>(null);
   const [selectedAnalysisCount, setSelectedAnalysisCount] = useState<number | null>(null);
   const [validatedResponseCount, setValidatedResponseCount] = useState<number | null>(null);
+  const [selectionDecisions, setSelectionDecisions] = useState<AiSelectionDecision[]>([]);
   const [cpuSearch, setCpuSearch] = useState('');
   const [cpuManufacturer, setCpuManufacturer] = useState('');
   const [cpuSpecs, setCpuSpecs] = useState<CpuSpec[]>([]);
@@ -71,6 +72,7 @@ function App() {
     setRemovedDuplicateCount(null);
     setSelectedAnalysisCount(null);
     setValidatedResponseCount(null);
+    setSelectionDecisions([]);
     setAiProgress({ state: 'running', activeStep: 0, detail: '부산광역시 전체 조회 조건을 확인하고 있습니다.' });
 
     setIsAiFetching(true);
@@ -115,6 +117,7 @@ function App() {
       }
       const filtered = selectListingsForAi(prepared, cpuMatches);
       setSelectedAnalysisCount(filtered.listings.length);
+      setSelectionDecisions(filtered.selectionDecisions);
       setAiProgress({
         state: 'running',
         activeStep: 4,
@@ -198,6 +201,31 @@ function App() {
               })}
             </ol>
             <p className="progress-detail">{aiProgress.detail}</p>
+          </section>
+        )}
+
+        {selectionDecisions.length > 0 && (
+          <section className="workspace table-workspace ai-selection-workspace">
+            <div className="results-panel">
+              <div className="section-heading">
+                <div><p className="eyebrow">AI SELECTION</p><h2>AI 분석 대상 선정 내역</h2></div>
+                <span className="count-pill">{selectionDecisions.filter((item) => item.selected).length}건 선정 / 총 {selectionDecisions.length}건</span>
+              </div>
+              <div className="comparison-table-wrap">
+                <table className="comparison-table ai-selection-table">
+                  <thead><tr><th>매물</th><th>감지 CPU</th><th>DB CPU</th><th>DB 순위</th><th>선정 여부</th></tr></thead>
+                  <tbody>{selectionDecisions.map((item) => (
+                    <tr className={item.selected ? 'selection-row-selected' : ''} key={item.listing.id}>
+                      <td><div className="selection-product"><a href={item.listing.url} target="_blank" rel="noreferrer">{item.listing.title}</a><span>{item.listing.price === null ? '가격 미상' : `${item.listing.price.toLocaleString()}원`}</span></div></td>
+                      <td><strong className="selection-cpu">{item.detectedCpu ?? 'CPU 확인 불가'}</strong></td>
+                      <td>{item.cpuSpec?.cpu_name ?? 'DB 매칭 없음'}</td>
+                      <td>{item.cpuSpec ? <span className="cpu-rank-badge">{item.cpuSpec.performance_rank}위</span> : '—'}</td>
+                      <td><SelectionStatus decision={item} /></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
           </section>
         )}
 
@@ -326,6 +354,16 @@ function DbCpuDetails({ cpuSpec }: { cpuSpec?: CpuSpec }) {
       <small>{cpuSpec.benchmark_name} · {cpuSpec.benchmark_version}</small>
     </div>
   );
+}
+
+function SelectionStatus({ decision }: { decision: AiSelectionDecision }) {
+  const labels: Record<AiSelectionDecision['reason'], string> = {
+    selected: '선정',
+    'cpu-missing': '제외 · CPU 확인 불가',
+    'db-unmatched': '제외 · DB 매칭 없음',
+    'limit-exceeded': `제외 · 상위 ${MAX_AI_LISTINGS}건 밖`,
+  };
+  return <span className={`selection-status selection-status-${decision.selected ? 'selected' : 'excluded'}`}>{labels[decision.reason]}</span>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
