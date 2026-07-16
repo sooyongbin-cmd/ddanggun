@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import handler from '../api/gemini-analysis';
 import { GEMINI_MODELS } from '../src/gemini-models';
 
@@ -41,7 +42,7 @@ describe('Gemini analysis API', () => {
     const response = createResponse();
     await handler({ method: 'POST', body: { listings: [] } } as never, response.res as never);
     expect(response.statusCode()).toBe(503);
-    expect(response.json().error).toContain('GEMINI_API_KEY');
+    expect(response.json().error).toMatchObject({ code: 'GEMINI_API_KEY_MISSING', stage: 'request-validation' });
   });
 
   it.each(GEMINI_MODELS)('accepts $id', async ({ id }) => {
@@ -66,6 +67,27 @@ describe('Gemini analysis API', () => {
     await handler({ method: 'POST', body: { model: 'gemini-unknown', listings: [{}] } } as never, response.res as never);
     expect(response.statusCode()).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not use unresolved local runtime imports in the Vercel function', () => {
+    const source = readFileSync(new URL('../api/gemini-analysis.ts', import.meta.url), 'utf8');
+    const localRuntimeImports = [...source.matchAll(/^import\s+(?!type\b).*?from\s+['"](\.{1,2}\/[^'"]+)['"]/gm)].map((match) => match[1]);
+    expect(localRuntimeImports).toEqual([]);
+  });
+
+  it('returns a structured error when Gemini does not return JSON', async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-key');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: new Headers({ 'content-type': 'text/plain', 'x-request-id': 'gemini-request-1' }),
+      text: async () => 'upstream unavailable',
+    }));
+    const response = createResponse();
+    await handler({ method: 'POST', headers: { 'x-vercel-id': 'vercel-request-1' }, body: { listings: [{ id: 'listing-1', title: 'PC', price: 100000, url: 'https://example.com/1' }] } } as never, response.res as never);
+    expect(response.statusCode()).toBe(502);
+    expect(response.json().error).toMatchObject({ code: 'GEMINI_RESPONSE_INVALID_JSON', stage: 'gemini-response', requestId: 'vercel-request-1' });
   });
 });
 

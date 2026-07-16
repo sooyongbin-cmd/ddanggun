@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { analyze, getCpuPerformanceScore, getCpuSpecification } from './analyzer';
 import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, type GeminiModel } from './gemini-models';
+import { getErrorMessage, readJsonResponse } from './http';
 import { loadAnalyses, saveAnalyses } from './storage';
 import type { AiListingAnalysis, Analysis, Listing } from './types';
 import './style.css';
@@ -269,34 +270,6 @@ function App() {
       <footer><span>PC VALUE / INTERNAL TOOL</span><span>데이터는 이 브라우저에만 저장됩니다.</span></footer>
     </div>
   );
-}
-
-function getErrorMessage(value: unknown, fallback = '당근 검색에 실패했습니다.'): string {
-  if (typeof value === 'string' && value.trim()) return value;
-  if (value instanceof Error && value.message) return value.message;
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    for (const key of ['message', 'error', 'detail', 'statusText']) {
-      const nested = record[key];
-      if (typeof nested === 'string' && nested.trim()) return nested;
-      if (nested && nested !== value) {
-        const message: string = getErrorMessage(nested, '');
-        if (message) return message;
-      }
-    }
-  }
-  return fallback;
-}
-
-async function readJsonResponse<T>(response: Response, serverName: string): Promise<T> {
-  const contentType = response.headers.get('content-type') ?? '';
-  const responseText = await response.text();
-  if (!contentType.includes('application/json')) throw new Error(`${serverName}가 JSON이 아닌 응답을 반환했습니다 (HTTP ${response.status}).`);
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    throw new Error(`${serverName} 응답을 읽을 수 없습니다 (HTTP ${response.status}).`);
-  }
 }
 
 function nextPaint() {
