@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "당근 PC 가성비 분석기",
+  "version": "0.1.0",
+  "description": "현재 열어 둔 당근 검색 결과를 로컬 분석 대시보드로 보냅니다.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://www.daangn.com/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{ "matches": ["http://localhost/*", "http://127.0.0.1/*"], "js": ["dashboard-bridge.js"] }],
+  "action": { "default_popup": "popup.html", "default_title": "당근 PC 분석" }
+}
