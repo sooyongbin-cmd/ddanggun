@@ -215,7 +215,7 @@ function App() {
                       <td><span className="table-rank">{String(index + 1).padStart(2, '0')}</span></td>
                       <td><div className="ai-product"><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a><span>{item.location ?? '지역 미상'}</span></div></td>
                       <td className="price-cell">{item.price ? `${item.price.toLocaleString()}원` : '미상'}</td>
-                      <td><AiCpuDetails cpu={item.cpu} performanceScore={item.cpuPerformanceScore} performanceSummary={item.cpuPerformanceSummary} /></td><td>{item.ram}</td><td>{item.storage}</td><td>{item.gpu}</td>
+                      <td><AiCpuDetails item={item} /></td><td>{item.ram}</td><td>{item.storage}</td><td>{item.gpu}</td>
                       <td><span className="ai-score">{item.score}</span></td>
                       <td><span className={`grade grade-${item.recommendation}`}>{item.recommendation}</span></td>
                       <td className="ai-text-cell">{item.summary}</td><td className="ai-text-cell">{item.strengths}</td><td className="ai-text-cell">{item.cautions}</td>
@@ -288,15 +288,23 @@ function formatDate(value?: string) {
 function Missing() { return <span className="missing">확인 필요</span>; }
 function formatCpuSpeed(cpu?: string) { const spec = getCpuSpecification(cpu); if (!spec) return <Missing />; return spec.maxGhz ? `${spec.baseGhz} / ${spec.maxGhz}GHz` : `${spec.baseGhz}GHz`; }
 
-function AiCpuDetails({ cpu, performanceScore, performanceSummary }: { cpu: string; performanceScore: number; performanceSummary: string }) {
-  const unavailable = /확인\s*불가|unknown|n\/a/i.test(cpu) || performanceScore <= 0;
+function AiCpuDetails({ item }: { item: AiListingAnalysis }) {
+  const unavailable = /확인\s*불가|unknown|n\/a/i.test(item.cpu) || item.cpuPerformanceScore <= 0;
+  const coreThread = `${item.cpuCores > 0 ? `${item.cpuCores}코어` : '코어 확인 불가'} · ${item.cpuThreads > 0 ? `${item.cpuThreads}스레드` : '스레드 확인 불가'}`;
+  const clocks = `기본 ${formatGhz(item.cpuBaseClockGhz)} · 최대 ${formatGhz(item.cpuMaxClockGhz)}`;
   return (
     <div className="ai-cpu-details">
-      <strong>{cpu}</strong>
-      <span>{unavailable ? 'Gemini 성능점수 확인 불가' : <>Gemini 성능점수 <b>{performanceScore}</b></>}</span>
-      <small>{performanceSummary}</small>
+      <strong>{item.cpu}</strong>
+      <span>{unavailable ? 'Gemini 성능점수 확인 불가' : <>Gemini 성능점수 <b>{item.cpuPerformanceScore}</b></>}</span>
+      <small>{coreThread}</small>
+      <small>{clocks}</small>
+      <small>{item.cpuPerformanceSummary}</small>
     </div>
   );
+}
+
+function formatGhz(value: number) {
+  return value > 0 ? `${value}GHz` : '확인 불가';
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

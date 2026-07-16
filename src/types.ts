@@ -11,6 +11,10 @@ export type AiListingAnalysis = {
   cpu: string;
   cpuPerformanceScore: number;
   cpuPerformanceSummary: string;
+  cpuCores: number;
+  cpuThreads: number;
+  cpuBaseClockGhz: number;
+  cpuMaxClockGhz: number;
   ram: string;
   storage: string;
   gpu: string;
