@@ -16,7 +16,6 @@ const myComputer = analyze({
 
 function App() {
   const [items, setItems] = useState<Analysis[]>(loadAnalyses);
-  const [manual, setManual] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -50,19 +49,6 @@ function App() {
     ]);
   }
 
-  function addManual() {
-    const [title, priceText] = manual.split('|');
-    if (!title?.trim()) return;
-    importListings([{
-      id: crypto.randomUUID(),
-      title: title.trim(),
-      price: Number(priceText?.replace(/[^\d]/g, '')) || null,
-      url: '#',
-      location: '직접 입력',
-    }]);
-    setManual('');
-  }
-
   async function fetchDanggun() {
     setItems([]);
     setLoadError('');
@@ -80,11 +66,6 @@ function App() {
     }
   }
 
-  function clearHistory() {
-    setItems([]);
-    setLoadError('');
-  }
-
   const grade = (item: Analysis) => item.valueScore && item.confidence !== 'low'
     ? item.valueScore >= 30 ? '추천' : '보통'
     : '주의';
@@ -96,8 +77,6 @@ function App() {
         <a className="wordmark" href="#top" aria-label="PC Value 홈">
           <span className="wordmark-dot" /> ddanggun
         </a>
-        <div className="nav-meta">해운대구 · 수영구 PC 분석</div>
-        <button className="button button-outline button-small" onClick={clearHistory}>분석 이력 삭제</button>
       </nav>
 
       <main id="top">
@@ -111,13 +90,6 @@ function App() {
             <button className="button button-primary" disabled={isFetching} onClick={fetchDanggun}>
               {isFetching ? '검색 결과 가져오는 중…' : '조회하기'}
             </button>
-            <div className="manual-entry">
-              <label htmlFor="manual-listing">매물 직접 추가</label>
-              <div>
-                <input id="manual-listing" value={manual} onChange={(event) => setManual(event.target.value)} placeholder="i5-10400 RAM 16GB SSD 512GB | 280000" onKeyDown={(event) => event.key === 'Enter' && addManual()} />
-                <button className="button button-outline" onClick={addManual}>추가</button>
-              </div>
-            </div>
           </div>
           {loadError && <p className="alert" role="alert">{loadError}</p>}
         </section>
