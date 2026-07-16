@@ -71,11 +71,21 @@ function App() {
         regions: selectedRegions.join(','),
         onlyOnSale: String(onlyOnSale),
       });
-      const response = await fetch(`/api/danggun-search?${query}`);
-      const data = await response.json();
+      const response = await fetch(`/api/danggun-search?${query}`, { headers: { Accept: 'application/json' } });
+      const contentType = response.headers.get('content-type') ?? '';
+      const responseText = await response.text();
+      if (!contentType.includes('application/json')) {
+        throw new Error(`조회 서버가 JSON이 아닌 응답을 반환했습니다 (HTTP ${response.status}). 이 앱은 조회 API가 설정된 서버에서 실행해야 합니다.`);
+      }
+      let data: { listings?: Listing[]; error?: string };
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`조회 서버 응답을 읽을 수 없습니다 (HTTP ${response.status}).`);
+      }
       if (!response.ok) throw new Error(data.error || '당근 검색에 실패했습니다.');
-      importListings(data.listings);
-      if (!data.listings.length) setLoadError('조건에 맞는 판매중 매물이 없습니다.');
+      importListings(data.listings ?? []);
+      if (!data.listings?.length) setLoadError('조건에 맞는 판매중 매물이 없습니다.');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : '당근 검색에 실패했습니다.');
     } finally {
