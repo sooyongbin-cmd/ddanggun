@@ -30,8 +30,9 @@ function App() {
     setIsAiFetching(true);
     try {
       await nextPaint();
+      const searchKeyword = keyword.trim() || 'PC';
       const query = new URLSearchParams({
-        search: keyword.trim() || 'PC',
+        search: searchKeyword,
         minPrice: minPrice.replace(/[^\d]/g, '') || '0',
         maxPrice: maxPrice.replace(/[^\d]/g, '') || '999999999',
         onlyOnSale: String(onlyOnSale),
@@ -48,7 +49,7 @@ function App() {
       if (!listings.length) throw new Error('조건에 맞는 판매중 매물이 없습니다.');
 
       await nextPaint();
-      const filtered = filterListingsForAi(listings, keyword);
+      const filtered = filterListingsForAi(listings, searchKeyword);
       const uniqueContentCount = listings.length - filtered.excludedDuplicates;
       setDeduplicatedCount(uniqueContentCount);
       setAiProgress({ state: 'running', activeStep: 3, detail: `제목·본문이 동일한 중복 ${filtered.excludedDuplicates}건을 제거한 후 ${uniqueContentCount}건이 남았습니다.` });
@@ -67,7 +68,7 @@ function App() {
       const aiResponse = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ listings: filtered.listings, model: aiModel }),
+        body: JSON.stringify({ listings: filtered.listings, model: aiModel, keyword: searchKeyword }),
       });
       const aiData = await readJsonResponse<{ analyses?: AiListingAnalysis[]; model?: string; limited?: boolean; error?: unknown }>(aiResponse, 'AI 분석 서버');
       if (!aiResponse.ok) throw new Error(getErrorMessage(aiData.error, 'AI 분석에 실패했습니다.'));

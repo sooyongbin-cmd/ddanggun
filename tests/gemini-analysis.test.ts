@@ -22,7 +22,7 @@ describe('Gemini analysis API', () => {
 
     const req = {
       method: 'POST',
-      body: { listings: [{ id: 'listing-1', title: '게이밍 PC', price: 250000, url: 'https://example.com/original', location: '우동', body: 'i5-10400 RAM 16GB' }] },
+      body: { keyword: ' pc ', listings: [{ id: 'listing-1', title: '게이밍 PC', price: 250000, url: 'https://example.com/original', location: '우동', body: 'i5-10400 RAM 16GB' }] },
     };
     const response = createResponse();
     await handler(req as never, response.res as never);
@@ -40,6 +40,7 @@ describe('Gemini analysis API', () => {
     const prompt = requestBody.contents[0].parts[0].text as string;
     const promptListings = JSON.parse(prompt.slice(prompt.indexOf('[')));
     expect(promptListings).toEqual([{ id: 'listing-1', title: '게이밍 PC', price: 250000, body: 'i5-10400 RAM 16GB' }]);
+    expect(prompt).toContain('검색어가 PC이므로');
     expect(prompt).not.toContain('"location"');
     expect(prompt).not.toContain('우동');
   });
@@ -60,19 +61,22 @@ describe('Gemini analysis API', () => {
       { name: '', value: '빈 이름', unit: '', confidence: 'high' },
       ...Array.from({ length: 15 }, (_, index) => ({ name: `속성${index}`, value: `값${index}`, unit: '', confidence: 'medium' })),
     ];
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify([{ id: 'listing-1', category: '가전제품', attributes, score: 80, recommendation: '추천', summary: '상태 양호', strengths: '가격', cautions: '연식 확인' }]) }] } }] }),
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
     const response = createResponse();
 
-    await handler({ method: 'POST', body: { listings: [{ id: 'listing-1', title: '중고 가전', price: 100000, url: 'https://example.com/1' }] } } as never, response.res as never);
+    await handler({ method: 'POST', body: { keyword: '냉장고', listings: [{ id: 'listing-1', title: '중고 가전', price: 100000, url: 'https://example.com/1' }] } } as never, response.res as never);
 
     const normalized = response.json().analyses[0].attributes;
     expect(normalized).toHaveLength(12);
     expect(normalized[0]).toEqual({ name: '브랜드', value: '삼성', unit: '', confidence: 'low' });
     expect(normalized.filter((attribute: { name: string }) => attribute.name === '브랜드')).toHaveLength(1);
+    const prompt = JSON.parse(fetchMock.mock.calls[0][1].body).contents[0].parts[0].text;
+    expect(prompt).not.toContain('검색어가 PC이므로');
   });
 
   it.each(GEMINI_MODELS)('accepts $id', async ({ id }) => {
