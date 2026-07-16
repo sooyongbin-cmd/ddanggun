@@ -30,7 +30,7 @@ describe('Gemini analysis API', () => {
     expect(response.statusCode()).toBe(200);
     expect(response.json().analyses[0]).toMatchObject({ id: 'listing-1', title: '게이밍 PC', url: 'https://example.com/original', score: 88, recommendation: '추천' });
     const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain('gemini-3.5-flash:generateContent');
+    expect(String(url)).toContain('gemini-3.1-flash-lite:generateContent');
     expect(options.headers['x-goog-api-key']).toBe('test-key');
     const requestBody = JSON.parse(options.body);
     expect(requestBody.generationConfig.responseMimeType).toBe('application/json');

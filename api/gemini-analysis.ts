@@ -3,7 +3,7 @@ import type { AiListingAnalysis, Listing } from '../src/types';
 
 const MAX_LISTINGS = 40;
 const MAX_BODY_LENGTH = 2_000;
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const ALLOWED_GEMINI_MODELS = new Set(['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash']);
 
 type ErrorStage = 'request-validation' | 'gemini-request' | 'gemini-response' | 'result-validation' | 'response-send';

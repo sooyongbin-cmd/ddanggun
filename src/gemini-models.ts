@@ -7,7 +7,7 @@ export const GEMINI_MODELS = [
 ] as const;
 
 export type GeminiModel = typeof GEMINI_MODELS[number]['id'];
-export const DEFAULT_GEMINI_MODEL: GeminiModel = GEMINI_MODELS[0].id;
+export const DEFAULT_GEMINI_MODEL: GeminiModel = 'gemini-3.1-flash-lite';
 
 export function isGeminiModel(value: unknown): value is GeminiModel {
   return typeof value === 'string' && GEMINI_MODELS.some((model) => model.id === value);
