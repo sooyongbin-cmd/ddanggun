@@ -6,11 +6,11 @@ describe('Vercel danggun search API', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ pow: { challenge: 'test', difficulty: 0, expiresAt: 123, uri: '/search' } }),
+        text: async () => JSON.stringify({ pow: { challenge: 'test', difficulty: 0, expiresAt: 123, uri: '/search' } }),
       })
       .mockResolvedValue({
         ok: true,
-        json: async () => ({ fleamarketArticles: [] }),
+        text: async () => JSON.stringify({ fleamarketArticles: [] }),
       });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -32,19 +32,45 @@ describe('Vercel danggun search API', () => {
     let activeRequests = 0;
     let maxActiveRequests = 0;
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ pow: { challenge: 'test', difficulty: 0, expiresAt: 123, uri: '/search' } }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ pow: { challenge: 'test', difficulty: 0, expiresAt: 123, uri: '/search' } }) })
       .mockImplementation(async () => {
         activeRequests += 1;
         maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
         await new Promise((resolve) => setTimeout(resolve, 1));
         activeRequests -= 1;
-        return { ok: true, json: async () => ({ fleamarketArticles: [] }) };
+        return { ok: true, text: async () => JSON.stringify({ fleamarketArticles: [] }) };
       });
     vi.stubGlobal('fetch', fetchMock);
     const response = createResponse();
     await handler({ method: 'GET', url: '/api/danggun-search?search=PC' } as never, response.res as never);
     expect(response.statusCode()).toBe(200);
     expect(maxActiveRequests).toBe(1);
+  });
+
+  it('returns a useful error when an upstream search response is empty or invalid JSON', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ pow: { challenge: 'test', difficulty: 0, expiresAt: 123, uri: '/search' } }) })
+      .mockResolvedValue({ ok: true, text: async () => '' });
+    vi.stubGlobal('fetch', fetchMock);
+    const response = createResponse();
+
+    await handler({ method: 'GET', url: '/api/danggun-search?search=PC' } as never, response.res as never);
+
+    expect(response.statusCode()).toBe(502);
+    expect(response.json().error).toContain('중구 검색 응답을 JSON으로 읽을 수 없습니다');
+    expect(response.json().error).toContain('빈 응답');
+  });
+
+  it('reports a non-JSON loader response instead of a JSON parse exception', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '<html>temporarily unavailable</html>' });
+    vi.stubGlobal('fetch', fetchMock);
+    const response = createResponse();
+
+    await handler({ method: 'GET', url: '/api/danggun-search?search=PC' } as never, response.res as never);
+
+    expect(response.statusCode()).toBe(502);
+    expect(response.json().error).toContain('검색 준비 응답을 JSON으로 읽을 수 없습니다');
+    expect(response.json().error).toContain('<html>');
   });
 });
 

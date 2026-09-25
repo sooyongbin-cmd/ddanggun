@@ -38,8 +38,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const onlyOnSale = params.get('onlyOnSale') !== 'false';
 
     const loaderResponse = await fetch(`${SEARCH_PAGE}&_data=routes%2Fkr.buy-sell.s`, { headers });
-    if (!loaderResponse.ok) throw new Error(`검색 준비 요청 실패 (${loaderResponse.status})`);
-    const loader = await loaderResponse.json() as { pow?: { challenge: string; difficulty: number; expiresAt: number; uri: string } };
+    const loader = await readUpstreamJson<{ pow?: { challenge: string; difficulty: number; expiresAt: number; uri: string } }>(loaderResponse, '검색 준비');
     if (!loader.pow) throw new Error('검색 인증 정보를 받지 못했습니다.');
 
     const { challenge, difficulty, expiresAt, uri } = loader.pow;
@@ -60,15 +59,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       });
       try {
         const response = await fetch(`https://www.daangn.com/kr/api/v1/fleamarket/search?${query}`, { headers });
-        if (!response.ok) throw new Error(`${district.name} 검색 실패 (${response.status})`);
-        responses.push({ status: 'fulfilled', value: await response.json() as { fleamarketArticles?: Array<Record<string, any>> } });
+        responses.push({ status: 'fulfilled', value: await readUpstreamJson<{ fleamarketArticles?: Array<Record<string, any>> }>(response, `${district.name} 검색`) });
       } catch (reason) {
         responses.push({ status: 'rejected', reason });
       }
     }
 
     const successful = responses.filter((result): result is PromiseFulfilledResult<{ fleamarketArticles?: Array<Record<string, any>> }> => result.status === 'fulfilled');
-    if (!successful.length) throw new Error('선택한 지역의 검색 요청이 모두 실패했습니다.');
+    if (!successful.length) {
+      const failure = responses.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      throw new Error(`선택한 지역의 검색 요청이 모두 실패했습니다.${failure ? ` ${getErrorMessage(failure.reason)}` : ''}`);
+    }
 
     const uniqueArticles = new Map<string, Record<string, any>>();
     successful.flatMap((result) => result.value.fleamarketArticles ?? []).forEach((article) => uniqueArticles.set(String(article.id), article));
@@ -105,4 +106,20 @@ function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
   return '당근 검색에 실패했습니다.';
+}
+
+async function readUpstreamJson<T>(response: Response, requestName: string): Promise<T> {
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`${requestName} 요청 실패 (${response.status})${body ? `: ${safeExcerpt(body)}` : ''}`);
+  }
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new Error(`${requestName} 응답을 JSON으로 읽을 수 없습니다 (${response.status})${body ? `: ${safeExcerpt(body)}` : ': 빈 응답'}`);
+  }
+}
+
+function safeExcerpt(value: string) {
+  return value.replace(/\\s+/g, ' ').trim().slice(0, 200);
 }
